@@ -15,11 +15,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Собрать StartPack.exe
-        shell: powershell
+        shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File build.ps1
 
       - name: Собрать архив
-        shell: powershell
+        shell: pwsh
         run: powershell -ExecutionPolicy Bypass -File pack.ps1 -NoDesktop
 
       - name: Сохранить сборку
