@@ -1,0 +1,32 @@
+name: Сборка
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Собрать StartPack.exe
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File build.ps1
+
+      - name: Собрать архив
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File pack.ps1 -NoDesktop
+
+      - name: Сохранить сборку
+        uses: actions/upload-artifact@v4
+        with:
+          name: StartPack-${{ github.sha }}
+          path: |
+            out/StartPack.exe
+            out/StartPack-*.zip
+            out/SHA256SUMS.txt

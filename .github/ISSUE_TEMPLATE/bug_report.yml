@@ -1,0 +1,27 @@
+name: Ошибка
+description: Что-то не запускается, не находится или работает не так
+labels: [ошибка]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось
+      description: Что делали, что ожидали и что получилось.
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Отчёт Старт-пака
+      description: «⋯» → «Журнал и отчёт» → «Скопировать отчёт», затем вставьте сюда.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Версия Старт-пака
+      placeholder: например, 3.8
+  - type: input
+    id: windows
+    attributes:
+      label: Windows
+      placeholder: например, Windows 11 24H2

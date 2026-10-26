@@ -1,0 +1,54 @@
+name: Выпуск
+
+# Отправили тег v3.8 — собираем и публикуем выпуск: StartPack.exe (для автообновления),
+# архив для людей и SHA256SUMS.txt. Описание берётся из раздела CHANGELOG.md с этой версией.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Собрать
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File build.ps1
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          powershell -ExecutionPolicy Bypass -File pack.ps1 -NoDesktop
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Проверить, что версия в теге совпадает с версией программы
+        shell: powershell
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $inside = (Get-Item out\StartPack.exe).VersionInfo.FileVersion -replace '(\.0)+$', ''
+          if ($inside -ne $tag) { Write-Error "Тег $tag, а в программе $inside — поправьте Core.Version"; exit 1 }
+
+      - name: Описание выпуска из CHANGELOG.md
+        shell: powershell
+        run: |
+          $tag = '${{ github.ref_name }}'.TrimStart('v')
+          $lines = Get-Content CHANGELOG.md -Encoding UTF8
+          $notes = @(); $on = $false
+          foreach ($l in $lines) {
+            if ($l -match '^## ') { if ($on) { break }; $on = ($l.Trim() -eq "## $tag"); continue }
+            if ($on) { $notes += $l }
+          }
+          $notes += ''
+          $notes += 'Как установить: скачайте архив, откройте StartPack.exe и нажмите «Установить и открыть». Уже установлен — Старт-пак предложит обновиться сам.'
+          [IO.File]::WriteAllText("$PWD\notes.md", ($notes -join "`n"), (New-Object Text.UTF8Encoding $false))
+
+      - name: Опубликовать
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $ver = $tag.TrimStart('v')
+          gh release create $tag out\StartPack.exe "out\StartPack-$ver.zip" out\SHA256SUMS.txt --title "Старт-пак $ver" --notes-file notes.md
