@@ -19,7 +19,9 @@ namespace StartPack
         public bool Off;
         public int Progress = -1;
         public string Tip;
-        public bool Running;                 // работает — вместо ▶ кнопка «Остановить»
+        public bool Running;                 // работает — кнопка «Остановить»/«Закрыть», иначе «Запустить»
+        public string Action;                // надпись на кнопке; null — кнопки нет (например, программа не установлена)
+        public bool ActionDisabled;          // занята (идёт запуск, загрузка) — кнопка видна, но не нажимается
     }
 
     public class CardList : Control
@@ -33,6 +35,7 @@ namespace StartPack
         public event Action<Item, Point> MenuClick;
         public event Action<Item, string> ChipClick;
         public event Action<int, int> Reorder;
+        public Item Selected;                // выделенная карточка: ↑ ↓ двигают её по списку
 
         float sc = 1f;
         int scroll;
@@ -84,12 +87,20 @@ namespace StartPack
             g.Toggle = new Rectangle(g.Card.X + S(18), cy - S(11), S(40), S(22));
             g.Icon = new Rectangle(g.Toggle.Right + S(16), cy - S(17), S(34), S(34));
             int x = g.Card.Right - S(12);
-            g.Menu = new Rectangle(x - S(34), cy - S(17), S(34), S(34)); x = g.Menu.X - S(4);
-            g.Run = new Rectangle(x - S(34), cy - S(17), S(34), S(34)); x = g.Run.X - S(10);
+            g.Menu = new Rectangle(x - S(34), cy - S(17), S(34), S(34)); x = g.Menu.X - S(6);
+            if (ci.Action != null)
+            {
+                g.Run = new Rectangle(x - ActionW, cy - S(15), ActionW, S(30));
+                x = g.Run.X - S(8);
+            }
+            // кнопки-действия справа налево; если не помещаются — левые прячутся (они есть в меню «⋯»),
+            // чтобы не наезжать на название и состояние
             Font cf = Fonts.Semi(9.5f);
+            int textLeft = g.Icon.Right + S(14), minText = S(230);
             for (int k = ci.Chips.Count - 1; k >= 0; k--)
             {
                 int cw = TextRenderer.MeasureText(ci.Chips[k].Value, cf).Width + S(22);
+                if (x - cw - S(8) - textLeft < minText) break;
                 var r = new Rectangle(x - cw, cy - S(15), cw, S(30));
                 g.Chips.Insert(0, new KeyValuePair<string, Rectangle>(ci.Chips[k].Key, r));
                 x = r.X - S(8);
@@ -97,11 +108,31 @@ namespace StartPack
             if (!string.IsNullOrEmpty(ci.Badge))
             {
                 int bw = TextRenderer.MeasureText(ci.Badge, cf).Width + S(22);
-                g.Badge = new Rectangle(x - bw, cy - S(14), bw, S(28));
-                x = g.Badge.X - S(10);
+                if (x - bw - S(10) - textLeft >= minText)
+                {
+                    g.Badge = new Rectangle(x - bw, cy - S(14), bw, S(28));
+                    x = g.Badge.X - S(10);
+                }
             }
-            g.Text = new Rectangle(g.Icon.Right + S(14), g.Card.Y, Math.Max(S(40), x - g.Icon.Right - S(18)), CardH);
+            g.Text = new Rectangle(textLeft, g.Card.Y, Math.Max(S(40), x - g.Icon.Right - S(18)), CardH);
             return g;
+        }
+
+        // ширина кнопки «Запустить/Остановить» — одна на все карточки, чтобы колонка была ровной
+        int actionW = -1;
+        int ActionW
+        {
+            get
+            {
+                if (actionW < 0)
+                {
+                    int w = 0;
+                    foreach (string s in new[] { "Запустить", "Остановить", "Закрыть" })
+                        w = Math.Max(w, TextRenderer.MeasureText(s, Fonts.Semi(9.5f)).Width);
+                    actionW = w + S(16) + S(8) + S(24);
+                }
+                return actionW;
+            }
         }
 
         // ---------- рисование
@@ -196,9 +227,10 @@ namespace StartPack
                 }
 
                 // ▶ и ⋯
-                if (ci.Running) DrawIconBtn(g, geo.Run, Glyph.Stop, hov && hoverPart == "run", t.Red);
-                else DrawIconBtn(g, geo.Run, Glyph.Play, hov && hoverPart == "run", t.Accent);
+                if (ci.Action != null) DrawAction(g, geo.Run, ci, hov && hoverPart == "run");
                 DrawIconBtn(g, geo.Menu, Glyph.More, hov && hoverPart == "menu", t.Text);
+                if (Selected == it && Focused)
+                    Gfx.Stroke(g, new RectangleF(geo.Card.X + 1, geo.Card.Y + 1, geo.Card.Width - 2, geo.Card.Height - 2), S(12), t.Blue, 1.6f * sc);
 
                 // полоска загрузки
                 if (ci.Progress >= 0)
@@ -226,6 +258,22 @@ namespace StartPack
             }
         }
 
+        // «▶ Запустить» / «■ Остановить»: залитая таблетка с надписью
+        void DrawAction(Graphics g, Rectangle r, CardInfo ci, bool hover)
+        {
+            Theme t = Theme.Current;
+            // «Запустить» — зелёная, «Остановить/Закрыть» — спокойная, краснеет только под мышью
+            Color tone = ci.Running ? t.Red : t.Accent;
+            float k = ci.ActionDisabled ? 0.06f : ci.Running ? (hover ? 0.28f : 0f) : (hover ? 0.30f : 0.18f);
+            Gfx.Fill(g, r, S(8), Gfx.Mix(t.SurfaceAlt, tone, k));
+            Color fg = ci.ActionDisabled ? t.TextFaint : ci.Running ? (hover ? Gfx.Mix(tone, t.Text, 0.25f) : t.Text) : (hover ? Gfx.Mix(tone, t.Text, 0.25f) : tone);
+            var icon = new Rectangle(r.X + S(10), r.Y, S(16), r.Height);
+            if (ci.Running) Gfx.StopMark(g, icon, ci.ActionDisabled ? t.TextFaint : tone, S(10));
+            else Gfx.Text(g, Glyph.Play, Fonts.Icons(9.5f), icon, fg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            Gfx.Text(g, ci.Action, Fonts.Semi(9.5f), new Rectangle(icon.Right + S(6), r.Y, r.Right - icon.Right - S(8), r.Height), fg,
+                TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
+        }
+
         void DrawIconBtn(Graphics g, Rectangle r, string glyph, bool hover, Color hoverColor)
         {
             Theme t = Theme.Current;
@@ -247,7 +295,7 @@ namespace StartPack
                 if (!geo.Card.Contains(p)) continue;
                 item = Items[i]; index = i;
                 if (Rectangle.Inflate(geo.Toggle, S(6), S(10)).Contains(p)) part = "toggle";
-                else if (geo.Run.Contains(p)) part = "run";
+                else if (!geo.Run.IsEmpty && geo.Run.Contains(p)) part = "run";
                 else if (geo.Menu.Contains(p)) part = "menu";
                 else if (!geo.Badge.IsEmpty && geo.Badge.Contains(p)) part = "badge";
                 else
@@ -266,13 +314,14 @@ namespace StartPack
             {
                 case "toggle": return it.Enabled ? "Участвует в «Запустить всё» — нажмите, чтобы исключить" : "Не участвует в «Запустить всё» — нажмите, чтобы включить";
                 case "run":
-                    if (Describe == null || !Describe(it).Running) return "Запустить только эту";
-                    return VpnCtl.IsVpn(it) ? "Закрыть полностью (сначала отключит VPN)" : "Остановить";
+                    CardInfo rc = Describe != null ? Describe(it) : null;
+                    if (rc == null || !rc.Running) return "Запустить только эту программу";
+                    return VpnCtl.IsVpn(it) ? "Закрыть полностью (сначала отключит VPN)" : rc.Action + " программу";
                 case "menu": return "Ещё: изменить, обновить, порядок…";
                 case "badge": return "Обновить до новой версии";
                 case "body":
                     CardInfo ci = Describe != null ? Describe(it) : null;
-                    return ci != null && ci.Tip != null ? ci.Tip : it.Path;
+                    return (ci != null && ci.Tip != null ? ci.Tip : it.Path) + "\n\nЩёлкните по карточке и двигайте её стрелками ↑ ↓ (или перетащите мышью).";
             }
             return null;
         }
@@ -352,10 +401,12 @@ namespace StartPack
             if (part == "toggle" && ToggleClick != null) ToggleClick(it);
             else if (part == "run")
             {
-                bool running = Describe != null && Describe(it).Running;
-                if (running) { if (StopClick != null) StopClick(it); }
+                CardInfo rc = Describe != null ? Describe(it) : null;
+                if (rc != null && rc.ActionDisabled) return;
+                if (rc != null && rc.Running) { if (StopClick != null) StopClick(it); }
                 else if (RunClick != null) RunClick(it);
             }
+            else if (part == "body") { Selected = it; Invalidate(); }
             else if (part == "menu" && MenuClick != null) MenuClick(it, new Point(e.X, e.Y));
             else if (part == "badge" && BadgeClick != null) BadgeClick(it);
             else if (part != null && part.StartsWith("chip:") && ChipClick != null) ChipClick(it, part.Substring(5));
@@ -374,6 +425,24 @@ namespace StartPack
             base.OnMouseWheel(e);
             scroll = Math.Max(0, Math.Min(MaxScroll, scroll - Math.Sign(e.Delta) * S(64)));
             Invalidate();
+        }
+
+        protected override bool IsInputKey(Keys k) { return k == Keys.Up || k == Keys.Down || base.IsInputKey(k); }
+        protected override void OnGotFocus(EventArgs e) { Invalidate(); base.OnGotFocus(e); }
+        protected override void OnLostFocus(EventArgs e) { Invalidate(); base.OnLostFocus(e); }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            base.OnKeyDown(e);
+            if (e.KeyCode == Keys.Escape) { Selected = null; Invalidate(); return; }
+            if (Selected == null || (e.KeyCode != Keys.Up && e.KeyCode != Keys.Down)) return;
+            int i = Items.IndexOf(Selected);
+            if (i < 0) { Selected = null; return; }
+            int to = e.KeyCode == Keys.Up ? i - 1 : i + 1;
+            e.Handled = true;
+            if (to < 0 || to >= Items.Count || Reorder == null) return;
+            Reorder(i, to);
+            ScrollTo(Items.IndexOf(Selected));
         }
 
         protected override void OnResize(EventArgs e)

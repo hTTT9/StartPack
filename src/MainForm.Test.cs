@@ -53,6 +53,22 @@ namespace StartPack
             if (Env("STARTPACK_TEST_UI37"))
             {
                 await CheckNet(true);
+                Log("связь: " + string.Join(", ", NetSummary()));
+                // перенос карточки стрелкой: вторая карточка — вверх
+                if (cfg.Items.Count >= 2)
+                {
+                    string before = string.Join(" / ", cfg.Items.Select(i => i.Name));
+                    cards.Focus();
+                    cards.Selected = cfg.Items[1];
+                    PostMessage(cards.Handle, 0x100 /* WM_KEYDOWN */, (IntPtr)Keys.Up, IntPtr.Zero);
+                    for (int k = 0; k < 5; k++) { Application.DoEvents(); Thread.Sleep(50); }
+                    Log("стрелка вверх: было «" + before + "», стало «" + string.Join(" / ", cfg.Items.Select(i => i.Name)) + "»");
+                    PostMessage(cards.Handle, 0x100, (IntPtr)Keys.Down, IntPtr.Zero);
+                    for (int k = 0; k < 5; k++) { Application.DoEvents(); Thread.Sleep(50); }
+                    Log("стрелка вниз: вернулось = " + (string.Join(" / ", cfg.Items.Select(i => i.Name)) == before));
+                    Snap(this, testLog + ".selected.png");
+                    cards.Selected = null;
+                }
                 // подсказка «Запуск с Windows»
                 MaybeShowAutostartTip(true);
                 SnapScreen(testLog + ".tip.png");
@@ -121,10 +137,11 @@ namespace StartPack
                 foreach (Item v in cfg.Items.Where(VpnCtl.IsVpn)) { v.Path = ""; v.ProcessName = "startpack-demo-none"; }
                 RefreshState();
                 happServerName = null; happGuid = null;
-                await CheckNet(true);
-                Status("Нажмите «Запустить всё» — или запускайте по одной кнопкой ▶ на карточке.");
+                await CheckUpdates(false);
+                Status("Нажмите «Запустить всё» или запускайте программы по одной кнопкой на карточке.");
                 SyncCards();
-                Snap(this, testLog + ".demo.png");
+                RefreshState();
+                SnapFrame(this, testLog + ".demo.png");
             }
 
             if (Env("STARTPACK_TEST_SELFUPDATE"))
@@ -482,6 +499,50 @@ namespace StartPack
             f.Show(this);
             Snap(f, file);
             f.Close();
+        }
+
+        [DllImport("user32.dll")]
+        static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+        [DllImport("user32.dll")]
+        static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+        [DllImport("dwmapi.dll")]
+        static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT r, int size);
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT { public int Left, Top, Right, Bottom; }
+
+        // Снимок окна так, как его показывает Windows 11: настоящая рамка и скруглённые углы (для README).
+        void SnapFrame(Form f, string file)
+        {
+            try
+            {
+                for (int i = 0; i < 5; i++) { Application.DoEvents(); Thread.Sleep(100); }
+                RECT wr, fr;
+                GetWindowRect(f.Handle, out wr);
+                if (DwmGetWindowAttribute(f.Handle, 9 /* DWMWA_EXTENDED_FRAME_BOUNDS */, out fr, Marshal.SizeOf(typeof(RECT))) != 0) fr = wr;
+                using (var full = new Bitmap(wr.Right - wr.Left, wr.Bottom - wr.Top, PixelFormat.Format32bppArgb))
+                {
+                    using (Graphics g = Graphics.FromImage(full))
+                    {
+                        IntPtr hdc = g.GetHdc();
+                        PrintWindow(f.Handle, hdc, 2 /* PW_RENDERFULLCONTENT */);
+                        g.ReleaseHdc(hdc);
+                    }
+                    var crop = new Rectangle(fr.Left - wr.Left, fr.Top - wr.Top, fr.Right - fr.Left, fr.Bottom - fr.Top);
+                    using (var outBmp = new Bitmap(crop.Width, crop.Height, PixelFormat.Format32bppArgb))
+                    {
+                        using (Graphics g = Graphics.FromImage(outBmp))
+                        {
+                            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                            g.Clear(Color.Transparent);
+                            using (var path = Gfx.Round(new RectangleF(0, 0, crop.Width, crop.Height), S(8)))
+                            using (var tb = new TextureBrush(full, crop))
+                                g.FillPath(tb, path);
+                        }
+                        outBmp.Save(file, ImageFormat.Png);
+                    }
+                }
+            }
+            catch (Exception ex) { Log("снимок с рамкой не удался: " + ex.Message); Snap(f, file); }
         }
 
         void Snap(Form f, string file)

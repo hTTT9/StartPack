@@ -39,6 +39,9 @@ namespace StartPack
             new AppSource { Id = "discord", Page = "https://discord.com/download", PageHint = "Нажмите «Download for Windows» и запустите DiscordSetup.exe.", Name = "Discord", About = "голос и чаты", Host = "discord.com",
                 Url = "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64", FileName = "DiscordSetup.exe",
                 Publisher = "Discord Inc.", Detect = StartPack.Detect.Discord, Template = Templates.Discord },
+            new AppSource { Id = "warp", Page = "https://one.one.one.one/", PageHint = "Нажмите «Download for Windows» и запустите скачанный установщик.", Name = "Cloudflare WARP", About = "бесплатный VPN от Cloudflare", Host = "cloudflare.com",
+                Url = "https://downloads.cloudflareclient.com/v1/download/windows/ga", FileName = "Cloudflare_WARP.msi",
+                Publisher = "Cloudflare, Inc.", Detect = StartPack.Detect.Warp, Template = Templates.Warp },
             new AppSource { Id = "happ", Page = "https://github.com/Happ-proxy/happ-desktop/releases/latest", PageHint = "Скачайте setup-Happ.x64.exe (раздел Assets) и запустите.", Name = "Happ", About = "VPN-клиент", Host = "github.com/Happ-proxy",
                 Url = "https://github.com/Happ-proxy/happ-desktop/releases/latest/download/setup-Happ.x64.exe", FileName = "setup-Happ.x64.exe",
                 Publisher = "Flyfrog LLC", Detect = StartPack.Detect.Happ, Template = Templates.Happ },
@@ -72,6 +75,7 @@ namespace StartPack
             if (it.Special == "happ") return "happ";
             if (it.Special == "incy") return "incy";
             if (it.Special == "koala") return "koala";
+            if (it.Special == "warp") return "warp";
             if (it.Special == "spotify") return "spotify";
             if (it.ProcessName.Equals("Telegram", StringComparison.OrdinalIgnoreCase)) return "telegram";
             if (it.ProcessName.Equals("Discord", StringComparison.OrdinalIgnoreCase)) return "discord";

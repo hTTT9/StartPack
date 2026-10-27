@@ -391,7 +391,8 @@ namespace StartPack
             int tx = trackW + gap;
             Color fc = Enabled ? t.Text : t.TextFaint;
             Size ts = TextRenderer.MeasureText(Text ?? "", Font, new Size(MaxTextW, 0), TextFormatFlags.WordBreak);
-            Gfx.Text(g, Text, Font, new Rectangle(tx, (int)(2 * sc), Width - tx, ts.Height), fc, TextFormatFlags.WordBreak);
+            int ty = string.IsNullOrEmpty(Hint) && ts.Height < trackH + (int)(8 * sc) ? (int)track.Y + (trackH - ts.Height) / 2 : (int)(2 * sc);
+            Gfx.Text(g, Text, Font, new Rectangle(tx, ty, Width - tx, ts.Height), fc, TextFormatFlags.WordBreak);
             if (!string.IsNullOrEmpty(Hint))
                 Gfx.Text(g, Hint, Fonts.Ui(9f), new Rectangle(tx, (int)(4 * sc) + ts.Height, Width - tx, Height), t.TextDim, TextFormatFlags.WordBreak);
         }

@@ -21,6 +21,7 @@ namespace StartPack
             VpnCtl.XrayOwners(running, out h, out i);
             vpn.Happ = h;
             vpn.Incy = i;
+            vpn.Warp = cfg.Items.Any(x => x.Special == "warp") && WarpCtl.Connected();
             vpn.KoalaRunning = KoalaCtl.AppRunning(running);
             if (!vpn.KoalaRunning) { vpn.Koala = null; return; }
             if (koalaPolling || !cfg.Items.Any(x => x.Special == "koala")) return;
@@ -32,6 +33,7 @@ namespace StartPack
 
         async Task<bool> ConnectedNow(Item it)
         {
+            if (it.Special == "warp") { vpn.Warp = await Task.Run(() => WarpCtl.Connected()); return vpn.Warp; }
             if (it.Special == "koala")
             {
                 KoalaState st = await Task.Run(() => { try { return KoalaCtl.GetState(2000); } catch { return null; } });
@@ -101,6 +103,10 @@ namespace StartPack
                         ok = await WaitConnected(it, 20000);
                         if (!ok) { IncyCtl.Send("connect"); ok = await WaitConnected(it, 12000); }
                         break;
+                    case "warp":
+                        await Task.Run(() => WarpCtl.Run("connect"));
+                        ok = await WaitConnected(it, 15000);
+                        break;
                     case "koala":
                         if (it.VpnServer > 0) await KoalaApplyServer(it, true);
                         await Task.Run(() => KoalaCtl.SetTun(true, 4000));
@@ -142,6 +148,10 @@ namespace StartPack
                     case "incy":
                         IncyCtl.Send("disconnect");
                         off = await HappCtl.WaitFor(() => { bool h, i; VpnCtl.XrayOwners(Core.RunningNames(), out h, out i); return !i; }, 10000);
+                        break;
+                    case "warp":
+                        await Task.Run(() => WarpCtl.Run("disconnect"));
+                        off = await HappCtl.WaitFor(() => !WarpCtl.Connected(), 10000);
                         break;
                     case "koala":
                         await Task.Run(() => KoalaCtl.SetTun(false, 4000));
@@ -297,7 +307,7 @@ namespace StartPack
                 if (vpn.Koala != null && vpn.Koala.Now.Length > 0)
                     detail.Add((vpn.Koala.NowIndex > 0 ? "№" + vpn.Koala.NowIndex + " " : "") + vpn.Koala.Now);
             }
-            if (!it.Busy && Core.PathExists(it.Path))
+            if (!it.Busy && Core.PathExists(it.Path) && it.Special != "warp")
             {
                 string label = "Сервер";
                 if (it.Special == "koala" && it.VpnServer > 0) label = "Сервер: №" + it.VpnServer;
@@ -307,7 +317,6 @@ namespace StartPack
             }
             detail.Add(it.HappAutoConnect ? "автоподключение" : "без автоподключения");
             if (run && !it.Busy) ci.Chips.Add(conn ? new KeyValuePair<string, string>("disconnect", "Отключить") : new KeyValuePair<string, string>("connect", "Подключить"));
-            if (run && !it.Busy) ci.Chips.Add(new KeyValuePair<string, string>("close", "Закрыть"));
         }
     }
 }

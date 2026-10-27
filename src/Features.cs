@@ -1,4 +1,4 @@
-// Свой автозапуск программ (как в Диспетчере задач), проверка связи, управление zapret, уборка.
+﻿// Свой автозапуск программ (как в Диспетчере задач), проверка связи, управление zapret, уборка.
 
 using System;
 using System.Collections.Generic;
@@ -102,7 +102,7 @@ namespace StartPack
             if (discord) list.Add(new NetTarget { Name = "Discord", Url = "https://discord.com/api/v9/gateway" });
             if (cfg.Items.Any(i => i.Special == "spotify")) list.Add(new NetTarget { Name = "Spotify", Url = "https://apresolve.spotify.com/?type=accesspoint" });
             if (cfg.Items.Any(i => i.Repo.Equals("Flowseal/tg-ws-proxy", StringComparison.OrdinalIgnoreCase)))
-                list.Add(new NetTarget { Name = "Telegram", Host = "127.0.0.1", Port = TgWsPort() });
+                list.Add(new NetTarget { Name = "Telegram", Host = "127.0.0.1", Port = TgWsPort(), Url = "https://web.telegram.org/" });
             return list;
         }
 
@@ -131,6 +131,16 @@ namespace StartPack
                 var sw = Stopwatch.StartNew();
                 try
                 {
+                    if (t.Host != null)
+                    {
+                        // сначала — отвечает ли прокси на этом ПК (TG WS Proxy)
+                        using (var c = new TcpClient())
+                        {
+                            Task conn = c.ConnectAsync(t.Host, t.Port);
+                            if (!conn.Wait(3000) || !c.Connected) throw new Exception("TG WS Proxy не отвечает на " + t.Host + ":" + t.Port + " — он запущен?");
+                        }
+                        sw.Restart();
+                    }
                     if (t.Url != null)
                     {
                         var req = (HttpWebRequest)WebRequest.Create(t.Url);
@@ -145,14 +155,6 @@ namespace StartPack
                             // Пришёл любой HTTP-ответ (403, 404…) — значит, сайт доступен.
                             if (ex.Response == null) throw;
                             ex.Response.Dispose();
-                        }
-                    }
-                    else
-                    {
-                        using (var c = new TcpClient())
-                        {
-                            Task conn = c.ConnectAsync(t.Host, t.Port);
-                            if (!conn.Wait(3000) || !c.Connected) throw new Exception("прокси не отвечает на " + t.Host + ":" + t.Port);
                         }
                     }
                     t.Ms = (int)sw.ElapsedMilliseconds;

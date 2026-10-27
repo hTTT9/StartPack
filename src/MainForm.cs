@@ -38,8 +38,9 @@ namespace StartPack
         NetBar netBar;
         FlatBtn btnPing;
         bool demo;   // снимок для README: без личных подробностей
-        Toggle autoToggle;
-        bool syncingAuto;
+        Toggle autoToggle, ovToggle;
+        FlatBtn btnOvSettings, btnThanks;
+        bool syncingAuto, syncingOv;
         Callout autoTip;
         CardList cards;
         System.Windows.Forms.Timer timer;
@@ -190,7 +191,30 @@ namespace StartPack
             autoToggle.Fit();
             autoToggle.CheckedChanged += delegate { OnAutostartToggle(); };
             new ToolTip().SetToolTip(autoToggle, "При входе в Windows Старт-пак сам запустит всё из «Запустить всё» — в фоне, без окна");
-            footer.Controls.AddRange(new Control[] { btnAdd, lblHint, lblCount, autoToggle });
+            ovToggle = new Toggle("Оверлей  Ctrl+Alt+O", null, cfg.Overlay);
+            ovToggle.Fit();
+            ovToggle.CheckedChanged += delegate
+            {
+                if (syncingOv) return;
+                cfg.Overlay = ovToggle.Checked;
+                SaveCfg();
+                ApplyOverlay();
+                Journal.Write("оверлей", cfg.Overlay ? "показан" : "скрыт");
+            };
+            new ToolTip().SetToolTip(ovToggle, "Маленькая панель поверх всех окон: что запущено и как со связью. Ctrl+Alt+O — показать или скрыть из любой программы");
+            btnOvSettings = new FlatBtn("", BtnKind.Ghost, Glyph.Settings);
+            btnOvSettings.Fit();
+            btnOvSettings.Size = new Size(S(32), S(32));
+            btnOvSettings.Click += delegate { ShowOverlaySettings(); };
+            new ToolTip().SetToolTip(btnOvSettings, "Настроить оверлей: что показывать, размер, прозрачность, угол экрана");
+            btnThanks = new FlatBtn("", BtnKind.Ghost, Glyph.Heart);
+            btnThanks.Fit();
+            btnThanks.Size = new Size(S(36), S(36));
+            btnThanks.Click += delegate { using (var f = new DonateForm(cfg)) f.ShowDialog(this); };
+            new ToolTip().SetToolTip(btnThanks, "Нравится Старт-пак? Поблагодарить автора");
+            new ToolTip().SetToolTip(btnAdd, "Готовые пункты, программы из «Пуска» и запущенные. Можно и перетащить файл в окно");
+            lblHint.Visible = false;
+            footer.Controls.AddRange(new Control[] { btnAdd, btnThanks, lblHint, lblCount, ovToggle, btnOvSettings, autoToggle });
             footer.Resize += delegate { LayoutFooter(); };
 
             Controls.Add(body);
@@ -249,10 +273,19 @@ namespace StartPack
 
         void LayoutFooter()
         {
-            autoToggle.Location = new Point(footer.Width - S(24) - autoToggle.Width, (footer.Height - autoToggle.Height) / 2);
-            lblCount.Location = new Point(autoToggle.Left - S(24) - lblCount.Width, S(24));
-            lblCount.Visible = lblCount.Left > btnAdd.Right + S(12);
-            lblHint.Visible = lblHint.Right < (lblCount.Visible ? lblCount.Left : autoToggle.Left) - S(12);
+            int cy = footer.Height / 2;
+            Func<Control, int> top = c => cy - c.Height / 2;
+            btnAdd.Location = new Point(S(24), top(btnAdd));
+            btnThanks.Visible = Core.HasDonate(cfg);
+            btnThanks.Location = new Point(btnAdd.Right + S(8), top(btnThanks));
+            autoToggle.Location = new Point(footer.Width - S(24) - autoToggle.Width, top(autoToggle));
+            btnOvSettings.Location = new Point(autoToggle.Left - S(28) - btnOvSettings.Width, top(btnOvSettings));
+            ovToggle.Location = new Point(btnOvSettings.Left - S(4) - ovToggle.Width, top(ovToggle));
+            // счётчик — посередине свободного места между левой и правой группой
+            int leftEdge = (btnThanks.Visible ? btnThanks.Right : btnAdd.Right) + S(16), rightEdge = ovToggle.Left - S(16);
+            lblCount.Location = new Point(leftEdge + (rightEdge - leftEdge - lblCount.Width) / 2, top(lblCount));
+            lblCount.Visible = rightEdge - leftEdge >= lblCount.Width;
+            lblHint.Visible = false;
             PlaceAutostartTip();
         }
 
@@ -473,6 +506,12 @@ namespace StartPack
             }
 
             ci.Running = run && !it.Busy && Core.ProcNames(it).Length > 0;
+            if (exists)
+            {
+                // фоновые (zapret, TG WS Proxy) — «Остановить», программы с окном и VPN — «Закрыть»
+                ci.Action = ci.Running ? (it.UpdateKind.Length > 0 ? "Остановить" : "Закрыть") : "Запустить";
+                ci.ActionDisabled = it.Busy;
+            }
             if (!exists && !it.Busy && Installers.KindOf(it) != null)
             {
                 // автоматическая установка не вышла — показать и запасной путь: официальный сайт
@@ -821,7 +860,7 @@ namespace StartPack
                 TryAutoClose();
                 return;
             }
-            Status("Нажмите «Запустить всё» — или запускайте по одной кнопкой ▶ на карточке.");
+            Status("Нажмите «Запустить всё» или запускайте программы по одной кнопкой на карточке.");
             MaybeShowAutostartTip();
             if (Core.LastRepairs.Count > 0)
                 Status("Нашёл заново и обновил пути: " + string.Join(", ", Core.LastRepairs) + ".");
