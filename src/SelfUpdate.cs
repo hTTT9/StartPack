@@ -58,7 +58,13 @@ namespace StartPack
                 var i = new Info { Tag = Convert.ToString(d["tag_name"]) };
                 i.Version = Core.CleanTag(i.Tag);
                 object v;
-                if (d.TryGetValue("body", out v) && v != null) i.Notes = Convert.ToString(v).Trim();
+                if (d.TryGetValue("body", out v) && v != null)
+                {
+                    // в окне обновления строка «Как установить…» со страницы выпуска не нужна
+                    string notes = Convert.ToString(v);
+                    int cut = notes.IndexOf("Как установить:", StringComparison.Ordinal);
+                    i.Notes = (cut >= 0 ? notes.Substring(0, cut) : notes).Trim();
+                }
                 if (d.TryGetValue("html_url", out v) && v != null) i.PageUrl = Convert.ToString(v);
                 if (d.TryGetValue("assets", out v) && v is IEnumerable)
                     foreach (object o in (IEnumerable)v)
