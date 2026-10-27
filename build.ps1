@@ -7,7 +7,7 @@ if (-not (Test-Path $csc)) { throw "Не найден компилятор: $csc
 New-Item -ItemType Directory -Force "$root\out" | Out-Null
 
 $refs = 'System.dll', 'System.Core.dll', 'System.Drawing.dll', 'System.Windows.Forms.dll', 'System.Web.Extensions.dll',
-        'System.IO.Compression.dll', 'System.IO.Compression.FileSystem.dll', 'Microsoft.CSharp.dll', 'Microsoft.VisualBasic.dll'
+        'System.IO.Compression.dll', 'System.IO.Compression.FileSystem.dll', 'Microsoft.CSharp.dll', 'Microsoft.VisualBasic.dll', 'System.ServiceProcess.dll'
 $cscArgs = @('/nologo', '/target:winexe', '/codepage:65001', '/optimize+', '/warn:4',
           "/out:$root\out\StartPack.exe", "/win32icon:$root\assets\app.ico", "/win32manifest:$root\src\app.manifest", "/resource:$root\assets\app-256.png,StartPack.app-256.png") +
         ($refs | ForEach-Object { "/r:$_" }) + (Get-ChildItem "$root\src\*.cs" | ForEach-Object FullName)

@@ -56,7 +56,7 @@ namespace StartPack
 
             Section("ОСНОВНОЕ", null);
             tName = Field("Название", it.Name, null, null);
-            var browse = new FlatBtn("Обзор…", BtnKind.Secondary, null) { Compact = true };
+            var browse = new FlatBtn("Обзор", BtnKind.Secondary, null) { Compact = true };
             browse.Fit();
             browse.Click += Browse;
             tPath = Field("Что запускать", it.Path, browse, null);
@@ -121,7 +121,7 @@ namespace StartPack
             FillServers(it.HappServer);
 
             // Spotify
-            var browseDir = new FlatBtn("Обзор…", BtnKind.Secondary, null) { Compact = true };
+            var browseDir = new FlatBtn("Обзор", BtnKind.Secondary, null) { Compact = true };
             browseDir.Fit();
             browseDir.Click += BrowseHostsDir;
             tHostsDir = Field("Папка SpotifyHostsFix", it.HostsFixDir, browseDir, spotifyRows);
@@ -607,7 +607,7 @@ namespace StartPack
             MarkTheme();
 
             t.Controls.Add(Sec("ЗАПУСК", false));
-            AddToggle(t, "Жить в трее, возле часов", "Закрытие окна прячет Старт-пак в трей: перезапуск закрывшихся программ и Ctrl+Alt+S продолжают работать. Выйти — через меню «⋯» или трей.", cfg.Tray,
+            AddToggle(t, "Крестик сворачивает к часам", "Окно не закрывается, а прячется в значок возле часов: перезапуск закрывшихся программ и Ctrl+Alt+S продолжают работать. Выйти совсем — «⋯» → «Выйти из Старт-пака».", cfg.Tray,
                 on => { cfg.Tray = on; Changed(); return true; });
             AddToggle(t, "Горячая клавиша Ctrl+Alt+S — запустить всё", "Работает из любой программы, пока Старт-пак открыт или в трее.", cfg.Hotkey,
                 on => { cfg.Hotkey = on; Changed(); return true; });
@@ -615,7 +615,7 @@ namespace StartPack
                 on => { cfg.CloseAfterLaunch = on; return true; });
             AddToggle(t, "Проверять связь после запуска", "YouTube, Discord, Spotify и прокси Telegram — зелёная точка значит, что отвечают.", cfg.NetCheck,
                 on => { cfg.NetCheck = on; return true; });
-            AddToggle(t, "Проверять обновления при открытии", "zapret и TG WS Proxy — по релизам на GitHub.", cfg.CheckUpdatesOnStart,
+            AddToggle(t, "Проверять обновления при каждом запуске", "Старт-пак, zapret и TG WS Proxy. Если есть новая версия, вверху появится кнопка «Обновить».", cfg.CheckUpdatesOnStart,
                 on => { cfg.CheckUpdatesOnStart = on; return true; });
             AddToggle(t, "Запускать всё при входе в Windows", "Ярлык в «Автозагрузке»: после входа всё стартует само, в фоне — окно не появится.", Core.AutostartEnabled(),
                 on => { Core.SetAutostart(on); return Core.AutostartEnabled() == on; });
@@ -624,7 +624,7 @@ namespace StartPack
 
             t = right;
             t.Controls.Add(Sec("ОБНОВЛЕНИЯ И АВТОЗАПУСК", true));
-            AddToggle(t, "Напоминать об обновлениях", "Раз в 6 часов Старт-пак проверяет новые версии и, если он в трее, присылает уведомление.", cfg.UpdateNotify,
+            AddToggle(t, "Уведомлять об обновлениях", "Ещё и раз в 6 часов проверять, пока Старт-пак свёрнут к часам, и присылать уведомление.", cfg.UpdateNotify,
                 on => { cfg.UpdateNotify = on; return true; });
             Label dl = Lbl("Задержка «Запустить всё» при входе в Windows — чтобы сеть и VPN успели подняться:", "dim");
             dl.MaximumSize = new Size(S(520), 0);
@@ -652,7 +652,7 @@ namespace StartPack
             t.Controls.Add(Sec("ОВЕРЛЕЙ", false));
             AddToggle(t, "Показывать оверлей поверх окон", "Маленькая панель: что запущено, VPN и связь. Ctrl+Alt+O — показать/скрыть.", cfg.Overlay,
                 on => { cfg.Overlay = on; Changed(); return true; });
-            var ovBtn = new FlatBtn("Настроить оверлей…", BtnKind.Secondary, Glyph.Settings) { Compact = true, Margin = new Padding(0, S(2), 0, 0) };
+            var ovBtn = new FlatBtn("Настроить оверлей", BtnKind.Secondary, Glyph.Settings) { Compact = true, Margin = new Padding(0, S(2), 0, 0) };
             ovBtn.Fit();
             ovBtn.Click += delegate { using (var f = new OverlaySettingsForm(cfg, onChange)) f.ShowDialog(this); };
             t.Controls.Add(ovBtn);
@@ -663,13 +663,13 @@ namespace StartPack
             sl.Margin = new Padding(0, 0, 0, S(8));
             t.Controls.Add(sl);
             var cfgRow = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.LeftToRight, WrapContents = false, Margin = new Padding(0) };
-            var exp = new FlatBtn("Экспорт…", BtnKind.Secondary, Glyph.Export) { Compact = true, Margin = new Padding(0, 0, S(8), 0) };
+            var exp = new FlatBtn("Экспорт", BtnKind.Secondary, Glyph.Export) { Compact = true, Margin = new Padding(0, 0, S(8), 0) };
             exp.Fit();
             exp.Click += delegate { ExportCfg(); };
-            var imp = new FlatBtn("Импорт…", BtnKind.Secondary, Glyph.Import) { Compact = true, Margin = new Padding(0, 0, S(8), 0) };
+            var imp = new FlatBtn("Импорт", BtnKind.Secondary, Glyph.Import) { Compact = true, Margin = new Padding(0, 0, S(8), 0) };
             imp.Fit();
             imp.Click += delegate { ImportCfg(); };
-            var rst = new FlatBtn("Сброс…", BtnKind.Secondary, Glyph.Reset) { Compact = true, Margin = new Padding(0) };
+            var rst = new FlatBtn("Сброс", BtnKind.Secondary, Glyph.Reset) { Compact = true, Margin = new Padding(0) };
             rst.Fit();
             rst.Click += delegate { ResetMenu(rst); };
             cfgRow.Controls.Add(exp);
@@ -705,7 +705,7 @@ namespace StartPack
             setupRow.Controls.Add(openDir);
             if (Setup.IsInstalled)
             {
-                var setupBtn = new FlatBtn("Удалить Старт-пак…", BtnKind.Secondary, Glyph.Delete) { Compact = true, Margin = new Padding(S(8), 0, 0, 0) };
+                var setupBtn = new FlatBtn("Удалить Старт-пак", BtnKind.Secondary, Glyph.Delete) { Compact = true, Margin = new Padding(S(8), 0, 0, 0) };
                 setupBtn.Click += delegate
                 {
                     if (!Dlg.Ask(this, "Удалить Старт-пак?", "Удалятся программа, её ярлыки и список программ. Сами программы — zapret, Discord, VPN и другие — останутся.", "Удалить", "Отмена")) return;

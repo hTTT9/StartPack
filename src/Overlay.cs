@@ -123,7 +123,7 @@ namespace StartPack
 
         string NetLabel(NetTarget n)
         {
-            if (showMs && n.State == "ok") return n.Name + " " + n.Ms;
+            if (showMs && n.State == "ok" && n.Ms >= 0) return n.Name + " " + n.Ms;
             return n.Name;
         }
 
@@ -146,7 +146,7 @@ namespace StartPack
             ContextMenuStrip m = Menus.New();
             Menus.Add(m.Items, "Открыть Старт-пак", null, delegate { if (OpenMain != null) OpenMain(); });
             Menus.Add(m.Items, "Проверить связь", null, delegate { if (RefreshNet != null) RefreshNet(); });
-            Menus.Add(m.Items, "Настроить оверлей…", null, delegate { if (OpenSettings != null) OpenSettings(); });
+            Menus.Add(m.Items, "Настроить оверлей", null, delegate { if (OpenSettings != null) OpenSettings(); });
             Menus.Add(m.Items, "Скрыть оверлей  (Ctrl+Alt+O)", null, delegate { if (HideMe != null) HideMe(); });
             return m;
         }

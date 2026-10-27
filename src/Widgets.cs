@@ -1,4 +1,4 @@
-// Строка «связь»: таблетки YouTube / Discord / Spotify / Telegram с цветной точкой.
+﻿// Строка «связь»: таблетки YouTube / Discord / Spotify / Telegram с цветной точкой.
 
 using System;
 using System.Collections.Generic;
@@ -31,27 +31,37 @@ namespace StartPack
 
         string Label(NetTarget t)
         {
-            if (t.State == "ok") return t.Name + "  " + t.Ms + " мс";
+            if (t.State == "ok") return t.Name + (t.Ms < 0 ? "  работает" : "  " + t.Ms + " мс");
             if (t.State == "fail") return t.Name + "  нет связи";
             if (t.State == "checking") return t.Name + "  …";
             return t.Name;
+        }
+
+        // Ширина таблетки — под самую длинную надпись («нет связи», «999 мс»),
+        // чтобы во время проверки строка не прыгала и не уезжала под соседние кнопки.
+        int PillW(NetTarget t)
+        {
+            int w = 0;
+            foreach (string s in new[] { t.Name + "  нет связи", t.Name + "  999 мс", Label(t) })
+                w = Math.Max(w, TextRenderer.MeasureText(s, F).Width);
+            return w + S(34);
         }
 
         // Ширина всех таблеток — чтобы родитель мог прижать полосу вправо.
         public int NeededWidth()
         {
             int w = 0;
-            foreach (NetTarget t in Targets) w += TextRenderer.MeasureText(Label(t), F).Width + S(34) + S(8);
+            foreach (NetTarget t in Targets) w += PillW(t) + S(8);
             return Math.Max(0, w - S(8));
         }
 
         void Layout2()
         {
             pills.Clear();
-            int x = Width - NeededWidth();
+            int x = Math.Max(0, Width - NeededWidth());
             foreach (NetTarget t in Targets)
             {
-                int w = TextRenderer.MeasureText(Label(t), F).Width + S(34);
+                int w = PillW(t);
                 pills.Add(new Rectangle(x, (Height - S(30)) / 2, w, S(30)));
                 x += w + S(8);
             }
@@ -71,9 +81,12 @@ namespace StartPack
                 Gfx.Fill(g, r, r.Height / 2f, i == hover ? th.SurfaceAlt : th.Surface);
                 Gfx.Stroke(g, new RectangleF(r.X + 0.5f, r.Y + 0.5f, r.Width - 1, r.Height - 1), r.Height / 2f, th.Border, 1f);
                 Color dot = t.State == "ok" ? th.Green : t.State == "fail" ? th.Red : t.State == "checking" ? th.Blue : th.TextFaint;
+                // точка и надпись — по центру таблетки (ширина у таблетки постоянная)
                 int d = S(8);
-                using (var b = new SolidBrush(dot)) g.FillEllipse(b, r.X + S(12), r.Y + (r.Height - d) / 2, d, d);
-                Gfx.Text(g, Label(t), F, new Rectangle(r.X + S(26), r.Y, r.Width - S(30), r.Height), t.State == "fail" ? th.Red : th.Text,
+                int tw = TextRenderer.MeasureText(Label(t), F, Size.Empty, TextFormatFlags.NoPadding).Width;
+                int cx = r.X + (r.Width - (d + S(6) + tw)) / 2;
+                using (var b = new SolidBrush(dot)) g.FillEllipse(b, cx, r.Y + (r.Height - d) / 2, d, d);
+                Gfx.Text(g, Label(t), F, new Rectangle(cx + d + S(6), r.Y, tw + S(4), r.Height), t.State == "fail" ? th.Red : th.Text,
                     TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPadding);
             }
         }
@@ -87,7 +100,7 @@ namespace StartPack
             if (h >= 0)
             {
                 NetTarget t = Targets[h];
-                tt = t.State == "ok" ? t.Name + " отвечает (" + t.Ms + " мс). Нажмите, чтобы проверить ещё раз."
+                tt = t.State == "ok" ? (t.ViaProxy ? "Telegram работает через TG WS Proxy" + (t.Ms >= 0 ? ": " + t.Ms + " мс до сервера прокси" : "") : t.Name + " отвечает (" + t.Ms + " мс)") + ". Нажмите, чтобы проверить ещё раз."
                    : t.State == "fail" ? t.Name + ": " + t.Error + ". Нажмите, чтобы проверить ещё раз."
                    : "Проверить связь с " + t.Name;
             }

@@ -67,7 +67,7 @@ namespace StartPack
                     m.ShowCheckMargin = true;
                     FillStrategies(m.Items, it);
                     m.Items.Add(new ToolStripSeparator());
-                    Menus.Add(m.Items, "Подобрать тестом…", null, async delegate { await ZapretTest(it); });
+                    Menus.Add(m.Items, "Подобрать тестом", null, async delegate { await ZapretTest(it); });
                     lastMenu = m;
                     m.Show(cards, cards.PointToClient(Cursor.Position));
                     break;
@@ -455,7 +455,7 @@ namespace StartPack
                 Status(msg);
                 if (!Visible) Notify("Нет связи: " + string.Join(", ", bad.Select(t => t.Name)), "Нажмите, чтобы открыть Старт-пак.", ShowFromTray);
             }
-            else if (manual) Status("Связь в порядке: " + string.Join(", ", netTargets.Select(t => t.Name + " " + t.Ms + " мс")) + "." + ViaVpnNote());
+            else if (manual) Status("Связь в порядке: " + string.Join(", ", netTargets.Select(t => t.Name + (t.Ms < 0 ? " работает" : " " + t.Ms + " мс"))) + "." + ViaVpnNote());
         }
 
         string ViaVpnNote()
@@ -466,7 +466,7 @@ namespace StartPack
 
         List<string> NetSummary()
         {
-            return netTargets.Select(t => t.Name + " " + (t.State == "ok" ? "ок " + t.Ms + " мс" : t.State == "fail" ? "нет (" + t.Error + ")" : "не проверено")).ToList();
+            return netTargets.Select(t => t.Name + " " + (t.State == "ok" ? (t.Ms < 0 ? "ок" : "ок " + t.Ms + " мс") : t.State == "fail" ? "нет (" + t.Error + ")" : "не проверено")).ToList();
         }
 
         // ---------------------------------------------------------------- обновления

@@ -18,8 +18,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Старт-пак")]
 [assembly: System.Reflection.AssemblyProduct("Старт-пак")]
-[assembly: System.Reflection.AssemblyVersion("3.8.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("3.8.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.9.0.0")]
+[assembly: System.Reflection.AssemblyFileVersion("3.9.0.0")]
 
 namespace StartPack
 {
@@ -191,7 +191,7 @@ namespace StartPack
         {
             Version = 0; Theme = "dark"; CloseAfterLaunch = true; CheckUpdatesOnStart = true;
             Tray = true; Hotkey = true; NetCheck = true; ActiveProfile = ""; Profiles = new List<Profile>();
-            OverlayOpacity = 85; OverlayX = -1; OverlayY = -1; UpdateNotify = true;
+            OverlayOpacity = 85; OverlayX = -1; OverlayY = -1; UpdateNotify = false;
             OverlayShow = "enabled"; OverlayStatus = true; OverlayNet = true; OverlayMs = true; OverlayButtons = true; OverlayScale = 100;
             Items = new List<Item>();
             Donate = DonateAddr.Defaults();
@@ -253,8 +253,8 @@ namespace StartPack
     {
         public const string Title = "Старт-пак";
         public const string IpsetNone = "203.0.113.113/32";
-        public const int ConfigVersion = 5;
-        public const string Version = "3.8";
+        public const int ConfigVersion = 6;
+        public const string Version = "3.9";
 
         public static bool FirstRun;
 
@@ -337,6 +337,16 @@ namespace StartPack
         // Список из версии 1: отметить Happ и Spotify и добавить Spotify, если он есть на ПК.
         static void Migrate(Config c)
         {
+            if (c.Version >= 2 && c.Version < 6 && !c.Items.Any(i => i.Special == "warp"))
+            {
+                // версия 6: Cloudflare WARP в стандартном наборе — над VPN, выключенный
+                string found = Installers.SafeDetect(Installers.Get("warp"));
+                Item w = Templates.Make("warp", found);
+                w.Enabled = false;
+                c.Items.Add(w);
+                VpnCtl.SortLast(c);
+                Journal.Write("список", "добавлен Cloudflare WARP (выключен)" + (found == null ? ", не установлен" : ""));
+            }
             if (c.Version < 2)
             {
                 foreach (Item it in c.Items)
@@ -1356,6 +1366,11 @@ namespace StartPack
             return StartApp("INCY", "Incy", "incy");
         }
 
+        public static string Warp()
+        {
+            return File.Exists(WarpCtl.Exe) ? WarpCtl.Exe : StartApp("Cloudflare WARP");
+        }
+
         public static string Koala()
         {
             string f = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Koala Clash", "Koala Clash.exe");
@@ -1431,6 +1446,7 @@ namespace StartPack
         public static Item Happ() { string p = Detect.Happ(); return p == null ? null : Make("happ", p); }
         public static Item Incy() { string p = Detect.Incy(); return p == null ? null : Make("incy", p); }
         public static Item Koala() { string p = Detect.Koala(); return p == null ? null : Make("koala", p); }
+        public static Item Warp() { string p = Detect.Warp(); return p == null ? null : Make("warp", p); }
         public static Item Spotify() { string p = Detect.Spotify(); return p == null ? null : Make("spotify", p); }
         public static Item Telegram() { string p = Detect.Telegram(); return p == null ? null : Make("telegram", p); }
         public static Item Discord() { string p = Detect.Discord(); return p == null ? null : Make("discord", p); }
@@ -1449,6 +1465,7 @@ namespace StartPack
                 case "happ": return new Item { Name = "Happ", Path = path, ProcessName = "Happ", Delay = 1, Special = "happ", HappAutoConnect = true };
                 case "incy": return new Item { Name = "INCY", Path = path, ProcessName = "incy", Delay = 1, Special = "incy", HappAutoConnect = true };
                 case "koala": return new Item { Name = "Koala Clash", Path = path, ProcessName = "Koala Clash", Delay = 1, Special = "koala", HappAutoConnect = true };
+                case "warp": return new Item { Name = "Cloudflare WARP", Path = path, ProcessName = "Cloudflare WARP", Delay = 1, Special = "warp", HappAutoConnect = true };
                 case "spotify":
                     return new Item
                     {
@@ -1461,7 +1478,7 @@ namespace StartPack
             return null;
         }
 
-        public static readonly string[] StandardKinds = { "zapret", "tgws", "spotify", "telegram", "discord", "happ", "incy", "koala" };
+        public static readonly string[] StandardKinds = { "zapret", "tgws", "spotify", "telegram", "discord", "warp", "happ", "incy", "koala" };
 
         // Стандартный набор: все известные программы. Найденные на ПК — с путём, остальные — заготовки «не установлена».
         // VPN всегда выключены (в «Запустить всё» не входят): какой из них нужен, человек включает сам.

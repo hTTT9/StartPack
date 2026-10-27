@@ -15,6 +15,7 @@ namespace StartPack
 
         public void ApplyOverlay()
         {
+            if (ovToggle != null && ovToggle.Checked != cfg.Overlay) { syncingOv = true; ovToggle.Checked = cfg.Overlay; syncingOv = false; }
             if (cfg.Overlay)
             {
                 if (overlay == null || overlay.IsDisposed)

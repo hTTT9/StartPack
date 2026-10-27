@@ -1,4 +1,4 @@
-// Свой автозапуск программ (как в Диспетчере задач), проверка связи, управление zapret, уборка.
+﻿// Свой автозапуск программ (как в Диспетчере задач), проверка связи, управление zapret, уборка.
 
 using System;
 using System.Collections.Generic;
@@ -85,6 +85,7 @@ namespace StartPack
     {
         public string Name, Url, Host;
         public int Port;
+        public bool ViaProxy;       // Telegram: пинг — до сервера, к которому подключён TG WS Proxy
         public string State = "";   // "", "checking", "ok", "fail"
         public int Ms;
         public string Error;
@@ -102,7 +103,7 @@ namespace StartPack
             if (discord) list.Add(new NetTarget { Name = "Discord", Url = "https://discord.com/api/v9/gateway" });
             if (cfg.Items.Any(i => i.Special == "spotify")) list.Add(new NetTarget { Name = "Spotify", Url = "https://apresolve.spotify.com/?type=accesspoint" });
             if (cfg.Items.Any(i => i.Repo.Equals("Flowseal/tg-ws-proxy", StringComparison.OrdinalIgnoreCase)))
-                list.Add(new NetTarget { Name = "Telegram", Host = "127.0.0.1", Port = TgWsPort() });
+                list.Add(new NetTarget { Name = "Telegram", Host = "127.0.0.1", Port = TgWsPort(), ViaProxy = true });
             return list;
         }
 
@@ -129,8 +130,32 @@ namespace StartPack
             return Task.Run(() =>
             {
                 var sw = Stopwatch.StartNew();
+                bool noPing = false;   // прокси работает, но пока ни к чему не подключён — пинг не меряем
                 try
                 {
+                    if (t.Host != null)
+                    {
+                        // сначала — отвечает ли прокси на этом ПК (TG WS Proxy)
+                        using (var c = new TcpClient())
+                        {
+                            Task conn = c.ConnectAsync(t.Host, t.Port);
+                            if (!conn.Wait(3000) || !c.Connected) throw new Exception("TG WS Proxy не отвечает на " + t.Host + ":" + t.Port + " — он запущен?");
+                        }
+                        sw.Restart();
+                        if (t.ViaProxy)
+                        {
+                            IPEndPoint up = ProxyUpstream(t.Port);
+                            noPing = up == null;
+                            if (up != null)
+                            {
+                                using (var c = new TcpClient(up.AddressFamily))
+                                {
+                                    Task conn = c.ConnectAsync(up.Address, up.Port);
+                                    if (!conn.Wait(4000) || !c.Connected) throw new Exception("TG WS Proxy работает, но его сервер не отвечает (" + up + ")");
+                                }
+                            }
+                        }
+                    }
                     if (t.Url != null)
                     {
                         var req = (HttpWebRequest)WebRequest.Create(t.Url);
@@ -147,15 +172,7 @@ namespace StartPack
                             ex.Response.Dispose();
                         }
                     }
-                    else
-                    {
-                        using (var c = new TcpClient())
-                        {
-                            Task conn = c.ConnectAsync(t.Host, t.Port);
-                            if (!conn.Wait(3000) || !c.Connected) throw new Exception("прокси не отвечает на " + t.Host + ":" + t.Port);
-                        }
-                    }
-                    t.Ms = (int)sw.ElapsedMilliseconds;
+                    t.Ms = noPing ? -1 : (int)sw.ElapsedMilliseconds;
                     t.State = "ok";
                     t.Error = null;
                 }
@@ -166,6 +183,49 @@ namespace StartPack
                     t.Error = e is WebException ? Describe((WebException)e) : e.Message;
                 }
             });
+        }
+
+        // Куда сейчас подключён процесс, слушающий порт прокси (TG WS Proxy держит несколько соединений наготове).
+        public static IPEndPoint ProxyUpstream(int port)
+        {
+            var rows = TcpRows();
+            uint pid = 0;
+            foreach (var r in rows) if (r.State == 2 /* LISTEN */ && r.LocalPort == port) { pid = r.Pid; break; }
+            if (pid == 0) return null;
+            foreach (var r in rows)
+                if (r.Pid == pid && r.State == 5 /* ESTABLISHED */ && !IPAddress.IsLoopback(r.Remote.Address)) return r.Remote;
+            return null;
+        }
+
+        class TcpRow { public uint State, Pid; public int LocalPort; public IPEndPoint Remote; }
+
+        [System.Runtime.InteropServices.DllImport("iphlpapi.dll", SetLastError = true)]
+        static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool order, int af, int tableClass, uint reserved);
+
+        static List<TcpRow> TcpRows()
+        {
+            var list = new List<TcpRow>();
+            int size = 0;
+            GetExtendedTcpTable(IntPtr.Zero, ref size, false, 2 /* AF_INET */, 5 /* TCP_TABLE_OWNER_PID_ALL */, 0);
+            IntPtr buf = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
+            try
+            {
+                if (GetExtendedTcpTable(buf, ref size, false, 2, 5, 0) != 0) return list;
+                int n = System.Runtime.InteropServices.Marshal.ReadInt32(buf);
+                for (int i = 0; i < n; i++)
+                {
+                    IntPtr row = buf + 4 + i * 24;
+                    Func<int, uint> u = off => (uint)System.Runtime.InteropServices.Marshal.ReadInt32(row, off);
+                    Func<uint, int> port = p => (int)(((p & 0xFF) << 8) | ((p >> 8) & 0xFF));
+                    list.Add(new TcpRow
+                    {
+                        State = u(0), LocalPort = port(u(8)), Pid = u(20),
+                        Remote = new IPEndPoint(new IPAddress((long)u(12)), port(u(16)))
+                    });
+                }
+            }
+            finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(buf); }
+            return list;
         }
 
         static string Describe(WebException ex)

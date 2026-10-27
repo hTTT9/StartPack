@@ -51,4 +51,12 @@ jobs:
         run: |
           $tag = '${{ github.ref_name }}'
           $ver = $tag.TrimStart('v')
-          gh release create $tag out\StartPack.exe "out\StartPack-$ver.zip" out\SHA256SUMS.txt --title "Старт-пак $ver" --notes-file notes.md
+          $files = @('out\StartPack.exe', "out\StartPack-$ver.zip", 'out\SHA256SUMS.txt')
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            # выпуск уже есть (метку отправили повторно) — заменить файлы и описание
+            gh release upload $tag @files --clobber
+            gh release edit $tag --notes-file notes.md
+          } else {
+            gh release create $tag @files --title "Старт-пак $ver" --notes-file notes.md
+          }

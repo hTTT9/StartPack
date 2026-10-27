@@ -38,8 +38,9 @@ namespace StartPack
         NetBar netBar;
         FlatBtn btnPing;
         bool demo;   // снимок для README: без личных подробностей
-        Toggle autoToggle;
-        bool syncingAuto;
+        Toggle autoToggle, ovToggle;
+        FlatBtn btnOvSettings, btnThanks;
+        bool syncingAuto, syncingOv;
         Callout autoTip;
         CardList cards;
         System.Windows.Forms.Timer timer;
@@ -153,7 +154,11 @@ namespace StartPack
             btnUpdate.Fit();
             btnUpdate.Height = S(44);
             btnUpdate.Click += async delegate { await UpdateAll(); };
-            btnHelp = IconBtn("", "Справка (F1)", delegate { ShowHelp(); });
+            btnHelp = new FlatBtn("Возможности", BtnKind.Secondary, "\uE82F");
+            btnHelp.Fit();
+            btnHelp.Height = S(44);
+            btnHelp.Click += delegate { ShowHelp(); };
+            new ToolTip().SetToolTip(btnHelp, "Что умеет Старт-пак и как им пользоваться (F1)");
             btnMore = IconBtn(Glyph.More, "Ещё: журнал и отчёт, уборка, связь, выход", delegate { ShowMoreMenu(); });
             btnSettings = IconBtn(Glyph.Settings, "Настройки: тема, трей, горячая клавиша, автозапуск", delegate { OpenSettings(); });
             header.Controls.AddRange(new Control[] { logo, lblTitle, lblStatus, btnRunAll, btnUpdate, btnHelp, btnMore, btnSettings });
@@ -190,7 +195,30 @@ namespace StartPack
             autoToggle.Fit();
             autoToggle.CheckedChanged += delegate { OnAutostartToggle(); };
             new ToolTip().SetToolTip(autoToggle, "При входе в Windows Старт-пак сам запустит всё из «Запустить всё» — в фоне, без окна");
-            footer.Controls.AddRange(new Control[] { btnAdd, lblHint, lblCount, autoToggle });
+            ovToggle = new Toggle("Оверлей  Ctrl+Alt+O", null, cfg.Overlay);
+            ovToggle.Fit();
+            ovToggle.CheckedChanged += delegate
+            {
+                if (syncingOv) return;
+                cfg.Overlay = ovToggle.Checked;
+                SaveCfg();
+                ApplyOverlay();
+                Journal.Write("оверлей", cfg.Overlay ? "показан" : "скрыт");
+            };
+            new ToolTip().SetToolTip(ovToggle, "Маленькая панель поверх всех окон: что запущено и как со связью. Ctrl+Alt+O — показать или скрыть из любой программы");
+            btnOvSettings = new FlatBtn("", BtnKind.Ghost, Glyph.Settings);
+            btnOvSettings.Fit();
+            btnOvSettings.Size = new Size(S(32), S(32));
+            btnOvSettings.Click += delegate { ShowOverlaySettings(); };
+            new ToolTip().SetToolTip(btnOvSettings, "Настроить оверлей: что показывать, размер, прозрачность, угол экрана");
+            btnThanks = new FlatBtn("", BtnKind.Ghost, Glyph.Heart);
+            btnThanks.Fit();
+            btnThanks.Size = new Size(S(36), S(36));
+            btnThanks.Click += delegate { using (var f = new DonateForm(cfg)) f.ShowDialog(this); };
+            new ToolTip().SetToolTip(btnThanks, "Нравится Старт-пак? Поблагодарить автора");
+            new ToolTip().SetToolTip(btnAdd, "Готовые пункты, программы из «Пуска» и запущенные. Можно и перетащить файл в окно");
+            lblHint.Visible = false;
+            footer.Controls.AddRange(new Control[] { btnAdd, btnThanks, lblHint, lblCount, ovToggle, btnOvSettings, autoToggle });
             footer.Resize += delegate { LayoutFooter(); };
 
             Controls.Add(body);
@@ -217,11 +245,14 @@ namespace StartPack
         {
             int right = header.Width - S(24);
             int y = S(26);
-            foreach (FlatBtn b in new[] { btnSettings, btnMore, btnHelp })
+            foreach (FlatBtn b in new[] { btnSettings, btnMore })
             {
                 b.Location = new Point(right - b.Width, y);
                 right = b.Left - S(2);
             }
+            right -= S(6);
+            btnHelp.Location = new Point(right - btnHelp.Width, y);
+            right = btnHelp.Left - S(2);
             right -= S(8);
             btnRunAll.Location = new Point(right - btnRunAll.Width, y);
             right = btnRunAll.Left - S(10);
@@ -249,10 +280,19 @@ namespace StartPack
 
         void LayoutFooter()
         {
-            autoToggle.Location = new Point(footer.Width - S(24) - autoToggle.Width, (footer.Height - autoToggle.Height) / 2);
-            lblCount.Location = new Point(autoToggle.Left - S(24) - lblCount.Width, S(24));
-            lblCount.Visible = lblCount.Left > btnAdd.Right + S(12);
-            lblHint.Visible = lblHint.Right < (lblCount.Visible ? lblCount.Left : autoToggle.Left) - S(12);
+            int cy = footer.Height / 2;
+            Func<Control, int> top = c => cy - c.Height / 2;
+            btnAdd.Location = new Point(S(24), top(btnAdd));
+            btnThanks.Visible = Core.HasDonate(cfg);
+            btnThanks.Location = new Point(btnAdd.Right + S(8), top(btnThanks));
+            autoToggle.Location = new Point(footer.Width - S(24) - autoToggle.Width, top(autoToggle));
+            btnOvSettings.Location = new Point(autoToggle.Left - S(28) - btnOvSettings.Width, top(btnOvSettings));
+            ovToggle.Location = new Point(btnOvSettings.Left - S(4) - ovToggle.Width, top(ovToggle));
+            // счётчик — посередине свободного места между левой и правой группой
+            int leftEdge = (btnThanks.Visible ? btnThanks.Right : btnAdd.Right) + S(16), rightEdge = ovToggle.Left - S(16);
+            lblCount.Location = new Point(leftEdge + (rightEdge - leftEdge - lblCount.Width) / 2, top(lblCount));
+            lblCount.Visible = rightEdge - leftEdge >= lblCount.Width;
+            lblHint.Visible = false;
             PlaceAutostartTip();
         }
 
@@ -473,6 +513,12 @@ namespace StartPack
             }
 
             ci.Running = run && !it.Busy && Core.ProcNames(it).Length > 0;
+            if (exists)
+            {
+                // фоновые (zapret, TG WS Proxy) — «Остановить», программы с окном и VPN — «Закрыть»
+                ci.Action = ci.Running ? (it.UpdateKind.Length > 0 ? "Остановить" : "Закрыть") : "Запустить";
+                ci.ActionDisabled = it.Busy;
+            }
             if (!exists && !it.Busy && Installers.KindOf(it) != null)
             {
                 // автоматическая установка не вышла — показать и запасной путь: официальный сайт
@@ -547,7 +593,7 @@ namespace StartPack
                 Menus.Add(m.Items, "Перезапустить zapret", Glyph.Refresh, async delegate { await ZapretRestart(it); });
                 ToolStripMenuItem strat = Menus.Add(m.Items, "Стратегия", "", null);
                 FillStrategies(strat.DropDownItems, it);
-                Menus.Add(m.Items, "Подобрать стратегию тестом…", "", async delegate { await ZapretTest(it); });
+                Menus.Add(m.Items, "Подобрать стратегию тестом", "", async delegate { await ZapretTest(it); });
             }
 
             if (VpnCtl.IsVpn(it))
@@ -555,7 +601,7 @@ namespace StartPack
                 m.Items.Add(new ToolStripSeparator());
                 Menus.Add(m.Items, "Подключить", Glyph.Link, async delegate { await OnChip(it, "connect"); });
                 Menus.Add(m.Items, "Отключить", Glyph.Unlink, async delegate { await OnChip(it, "disconnect"); });
-                Menus.Add(m.Items, "Сервер…", Glyph.Sync, delegate { ShowVpnServers(it); });
+                Menus.Add(m.Items, "Сервер", Glyph.Sync, delegate { ShowVpnServers(it); });
                 if (Core.IsRunning(it, running))
                     Menus.Add(m.Items, "Закрыть " + VpnCtl.Title(it.Special) + " полностью", Glyph.Stop, async delegate { await StopItem(it); });
             }
@@ -572,7 +618,7 @@ namespace StartPack
                         async delegate { await ToggleHostsTask(it, !task); });
                     Menus.Add(m.Items, "Открыть папку SpotifyHostsFix", Glyph.Folder, delegate { try { Core.ShellOpen(Core.Expand(it.HostsFixDir)); } catch { } });
                 }
-                else Menus.Add(m.Items, "Указать папку SpotifyHostsFix…", Glyph.Folder, delegate { EditItem(it); });
+                else Menus.Add(m.Items, "Указать папку SpotifyHostsFix", Glyph.Folder, delegate { EditItem(it); });
             }
 
             string kindOf = Installers.KindOf(it);
@@ -580,7 +626,7 @@ namespace StartPack
             {
                 m.Items.Add(new ToolStripSeparator());
                 if (!Core.PathExists(it.Path)) Menus.Add(m.Items, "Установить автоматически", Glyph.Download, async delegate { await InstallApp(kindOf, it, false); });
-                Menus.Add(m.Items, "Скачать с официального сайта…", Glyph.Web, delegate { Installers.OpenPage(this, Installers.Get(kindOf)); });
+                Menus.Add(m.Items, "Скачать с официального сайта", Glyph.Web, delegate { Installers.OpenPage(this, Installers.Get(kindOf)); });
             }
 
             m.Items.Add(new ToolStripSeparator());
@@ -603,7 +649,7 @@ namespace StartPack
                 cards.Invalidate();
             });
             watch.Enabled = Core.ProcNames(it).Length > 0 && it.Special != "happ";
-            Menus.Add(m.Items, "Изменить…", Glyph.Edit, delegate { EditItem(it); });
+            Menus.Add(m.Items, "Изменить", Glyph.Edit, delegate { EditItem(it); });
             if (!Core.IsShell(Core.Expand(it.Path))) Menus.Add(m.Items, "Открыть папку", Glyph.Folder, delegate { OpenFolder(it); });
             int idx = cfg.Items.IndexOf(it);
             ToolStripMenuItem up = Menus.Add(m.Items, "Выше", Glyph.Up, delegate { MoveItem(it, -1); });
@@ -658,10 +704,10 @@ namespace StartPack
             Menus.Add(ready.DropDownItems, "INCY — VPN с автоподключением", null, async delegate { await AddTemplate("incy"); });
             Menus.Add(ready.DropDownItems, "Koala Clash — VPN, сервер по номеру строки", null, async delegate { await AddTemplate("koala"); });
             m.Items.Add(new ToolStripSeparator());
-            Menus.Add(m.Items, "Из запущенных программ…", Glyph.Process, delegate { AddFromRunning(); });
-            Menus.Add(m.Items, "Из меню «Пуск»…", Glyph.Store, delegate { AddFromStart(); });
-            Menus.Add(m.Items, "Файл или ярлык…", Glyph.File, delegate { AddFromFile(); });
-            Menus.Add(m.Items, "Вставить свой путь…", Glyph.Keyboard, delegate { AddViaEditor(new Item(), "Добавить программу"); });
+            Menus.Add(m.Items, "Из запущенных программ", Glyph.Process, delegate { AddFromRunning(); });
+            Menus.Add(m.Items, "Из меню «Пуск»", Glyph.Store, delegate { AddFromStart(); });
+            Menus.Add(m.Items, "Файл или ярлык", Glyph.File, delegate { AddFromFile(); });
+            Menus.Add(m.Items, "Вставить свой путь", Glyph.Keyboard, delegate { AddViaEditor(new Item(), "Добавить программу"); });
             ThemeSubmenus(m.Items);
             lastMenu = m;
             m.Show(btnAdd, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
@@ -690,13 +736,13 @@ namespace StartPack
                 su.Font = Fonts.Semi(10f);
                 m.Items.Add(new ToolStripSeparator());
             }
-            Menus.Add(m.Items, "Журнал и отчёт…", "", delegate { ShowJournal(); });
-            Menus.Add(m.Items, "Установить программы…", Glyph.Download, delegate { ShowInstalls(); });
+            Menus.Add(m.Items, "Журнал и отчёт", "", delegate { ShowJournal(); });
+            Menus.Add(m.Items, "Установить программы", Glyph.Download, delegate { ShowInstalls(); });
             Menus.Add(m.Items, "Найти программы заново", Glyph.Search, delegate { FindAgain(); });
-            Menus.Add(m.Items, "Уборка…", "", delegate { ShowCleanup(); });
+            Menus.Add(m.Items, "Уборка", "", delegate { ShowCleanup(); });
             Menus.Add(m.Items, "Проверить связь", Glyph.Globe, async delegate { await CheckNet(true); });
             Menus.Add(m.Items, (cfg.Overlay ? "Скрыть оверлей" : "Показать оверлей") + "    Ctrl+Alt+O", "\uE7F4", delegate { ToggleOverlay(); });
-            Menus.Add(m.Items, "Настроить оверлей…", "", delegate { ShowOverlaySettings(); });
+            Menus.Add(m.Items, "Настроить оверлей", "", delegate { ShowOverlaySettings(); });
             Menus.Add(m.Items, "Проверить обновления", Glyph.Refresh, async delegate { await CheckUpdates(true); });
             Menus.Add(m.Items, "Справка", "", delegate { ShowHelp(); });
             Menus.Add(m.Items, "Страница проекта на GitHub", Glyph.Web, delegate { try { Core.ShellOpen(SelfUpdate.Page); } catch { } });
@@ -817,11 +863,11 @@ namespace StartPack
                     }
                 }
                 await RunAllCore();
-                if (cfg.CheckUpdatesOnStart) { await CheckUpdates(false); NotifyUpdates(); }
+                if (cfg.CheckUpdatesOnStart) { await CheckSelfUpdate(false); await CheckUpdates(false); NotifyUpdates(); }
                 TryAutoClose();
                 return;
             }
-            Status("Нажмите «Запустить всё» — или запускайте по одной кнопкой ▶ на карточке.");
+            Status("Нажмите «Запустить всё» или запускайте программы по одной.");
             MaybeShowAutostartTip();
             if (Core.LastRepairs.Count > 0)
                 Status("Нашёл заново и обновил пути: " + string.Join(", ", Core.LastRepairs) + ".");

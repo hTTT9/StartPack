@@ -40,11 +40,11 @@ namespace StartPack
             return new Theme
             {
                 Dark = false,
-                Bg = C(0xF3F4F6), Surface = C(0xFFFFFF), SurfaceHover = C(0xF7F8FA), SurfaceAlt = C(0xE9ECF0),
-                Border = C(0xE2E5EA), Text = C(0x1F2328), TextDim = C(0x596273), TextFaint = C(0x8A93A0),
+                Bg = C(0xE2E5EA), Surface = C(0xECEEF2), SurfaceHover = C(0xE6E9EE), SurfaceAlt = C(0xD9DDE3),
+                Border = C(0xD0D5DC), Text = C(0x1F2328), TextDim = C(0x4B5563), TextFaint = C(0x7A8290),
                 Accent = C(0x15803D), AccentHover = C(0x166534), OnAccent = C(0xFFFFFF),
                 Blue = C(0x2563EB), BlueHover = C(0x1D4ED8), OnBlue = C(0xFFFFFF),
-                Green = C(0x15803D), Red = C(0xB91C1C), Amber = C(0xB45309), Track = C(0xC9CED6)
+                Green = C(0x15803D), Red = C(0xB91C1C), Amber = C(0xB45309), Track = C(0xBCC3CC)
             };
         }
 
@@ -391,7 +391,8 @@ namespace StartPack
             int tx = trackW + gap;
             Color fc = Enabled ? t.Text : t.TextFaint;
             Size ts = TextRenderer.MeasureText(Text ?? "", Font, new Size(MaxTextW, 0), TextFormatFlags.WordBreak);
-            Gfx.Text(g, Text, Font, new Rectangle(tx, (int)(2 * sc), Width - tx, ts.Height), fc, TextFormatFlags.WordBreak);
+            int ty = string.IsNullOrEmpty(Hint) && ts.Height < trackH + (int)(8 * sc) ? (int)track.Y + (trackH - ts.Height) / 2 : (int)(2 * sc);
+            Gfx.Text(g, Text, Font, new Rectangle(tx, ty, Width - tx, ts.Height), fc, TextFormatFlags.WordBreak);
             if (!string.IsNullOrEmpty(Hint))
                 Gfx.Text(g, Hint, Fonts.Ui(9f), new Rectangle(tx, (int)(4 * sc) + ts.Height, Width - tx, Height), t.TextDim, TextFormatFlags.WordBreak);
         }

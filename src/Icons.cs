@@ -64,6 +64,7 @@ namespace StartPack
                 case "happ": return Letter("H", Color.FromArgb(75, 85, 99), Color.FromArgb(31, 41, 55), size);
                 case "incy": return Letter("I", Color.FromArgb(167, 139, 250), Color.FromArgb(109, 40, 217), size);
                 case "koala": return Letter("K", Color.FromArgb(45, 212, 191), Color.FromArgb(15, 118, 110), size);
+                case "warp": return Letter("W", Color.FromArgb(251, 146, 60), Color.FromArgb(234, 88, 12), size);
             }
             return null;
         }

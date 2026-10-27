@@ -1,4 +1,4 @@
-// VPN-клиенты: Happ, INCY, Koala Clash — кто подключён, как подключить и выбрать сервер.
+﻿// VPN-клиенты: Happ, INCY, Koala Clash — кто подключён, как подключить и выбрать сервер.
 //   Happ  — ссылки happ://connect|disconnect, сервер — сохранённые «слоты» (список у Happ зашифрован);
 //   INCY  — ссылки incy://connect|disconnect (официальная документация INCY-DEV/incy-docs);
 //   Koala — API ядра mihomo через именованный канал \\.\pipe\Koala-Clash\mihomo: выбор сервера по номеру строки и TUN.
@@ -28,21 +28,21 @@ namespace StartPack
     // Снимок «кто подключён» — обновляется раз в 2 секунды.
     public class VpnSnapshot
     {
-        public bool Happ, Incy;
+        public bool Happ, Incy, Warp;
         public KoalaState Koala;
         public bool KoalaRunning;
     }
 
     public static class VpnCtl
     {
-        public static readonly string[] Kinds = { "happ", "incy", "koala" };
+        public static readonly string[] Kinds = { "warp", "happ", "incy", "koala" };
 
         public static bool IsVpn(Item it) { return Array.IndexOf(Kinds, it.Special) >= 0; }
         public static int Rank(Item it) { return Array.IndexOf(Kinds, it.Special); }
 
         public static string Title(string kind)
         {
-            switch (kind) { case "happ": return "Happ"; case "incy": return "INCY"; case "koala": return "Koala Clash"; }
+            switch (kind) { case "warp": return "Cloudflare WARP"; case "happ": return "Happ"; case "incy": return "INCY"; case "koala": return "Koala Clash"; }
             return kind;
         }
 
@@ -74,6 +74,7 @@ namespace StartPack
                 case "happ": return s.Happ;
                 case "incy": return s.Incy;
                 case "koala": return s.Koala != null && s.Koala.Tun;
+                case "warp": return s.Warp;
             }
             return false;
         }
@@ -87,6 +88,66 @@ namespace StartPack
             if (all.SequenceEqual(c.Items)) return false;
             c.Items = all;
             return true;
+        }
+    }
+
+    // Cloudflare WARP: подключение — warp-cli (идёт вместе с WARP), состояние — по сетевому адаптеру CloudflareWARP.
+    public static class WarpCtl
+    {
+        public static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Cloudflare", "Cloudflare WARP"); } }
+        public static string Exe { get { return Path.Combine(Dir, "Cloudflare WARP.exe"); } }
+        public static string Cli { get { return Path.Combine(Dir, "warp-cli.exe"); } }
+
+        public const string ServiceName = "CloudflareWARP";
+        public static bool IsServiceError(string message) { return message != null && message.StartsWith("служба WARP не запущена"); }
+
+        // Запустить службу WARP (Windows спросит права). true — запустилась.
+        public static bool StartService()
+        {
+            var psi = new ProcessStartInfo("sc.exe", "start " + ServiceName) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
+            using (Process p = Process.Start(psi)) p.WaitForExit(15000);
+            for (int i = 0; i < 20; i++)
+            {
+                try { using (var sc = new System.ServiceProcess.ServiceController(ServiceName)) if (sc.Status == System.ServiceProcess.ServiceControllerStatus.Running) return true; }
+                catch { }
+                System.Threading.Thread.Sleep(500);
+            }
+            return false;
+        }
+
+        public static bool Connected()
+        {
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    bool warp = ni.Name.IndexOf("CloudflareWARP", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                ni.Description.IndexOf("Cloudflare WARP", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (warp && ni.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        // warp-cli connect / disconnect. Ошибка — понятным текстом.
+        public static void Run(string cmd)
+        {
+            if (!File.Exists(Cli)) throw new Exception("не найден warp-cli — переустановите Cloudflare WARP");
+            var psi = new ProcessStartInfo(Cli, "--accept-tos " + cmd)
+            {
+                UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true
+            };
+            using (Process p = Process.Start(psi))
+            {
+                string output = p.StandardOutput.ReadToEnd() + p.StandardError.ReadToEnd();
+                p.WaitForExit(15000);
+                if (output.IndexOf("Unable to connect to the CloudflareWARP daemon", StringComparison.OrdinalIgnoreCase) >= 0)
+                    throw new Exception("служба WARP не запущена — откройте Cloudflare WARP или перезагрузите ПК");
+                if (output.IndexOf("Registration Missing", StringComparison.OrdinalIgnoreCase) >= 0)
+                    throw new Exception("WARP ещё не настроен — откройте его один раз и примите условия");
+                if (p.HasExited && p.ExitCode != 0) throw new Exception(output.Trim().Split('\n').FirstOrDefault() ?? "warp-cli вернул ошибку");
+            }
         }
     }
 

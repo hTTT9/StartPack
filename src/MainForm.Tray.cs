@@ -341,7 +341,7 @@ namespace StartPack
                 m.Items.Add(mi);
             }
             m.Items.Add(new ToolStripSeparator());
-            Menus.Add(m.Items, "Новый профиль из текущего…", null, delegate
+            Menus.Add(m.Items, "Новый профиль из текущего", null, delegate
             {
                 string name = InputForm.Ask(this, "Новый профиль", "Название профиля — например, «Игры» или «Работа». В него попадут программы, которые сейчас включены.", "");
                 if (string.IsNullOrWhiteSpace(name)) return;
@@ -353,7 +353,7 @@ namespace StartPack
             Profile cur = cfg.Active;
             if (cur != null)
             {
-                Menus.Add(m.Items, "Переименовать «" + cur.Name + "»…", null, delegate
+                Menus.Add(m.Items, "Переименовать «" + cur.Name + "»", null, delegate
                 {
                     string name = InputForm.Ask(this, "Переименовать профиль", "Новое название:", cur.Name);
                     if (string.IsNullOrWhiteSpace(name) || name.Trim() == cur.Name) return;
