@@ -18,8 +18,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Старт-пак")]
 [assembly: System.Reflection.AssemblyProduct("Старт-пак")]
-[assembly: System.Reflection.AssemblyVersion("3.9.0.0")]
-[assembly: System.Reflection.AssemblyFileVersion("3.9.0.0")]
+[assembly: System.Reflection.AssemblyVersion("3.9.1.0")]
+[assembly: System.Reflection.AssemblyFileVersion("3.9.1.0")]
 
 namespace StartPack
 {
@@ -254,7 +254,7 @@ namespace StartPack
         public const string Title = "Старт-пак";
         public const string IpsetNone = "203.0.113.113/32";
         public const int ConfigVersion = 6;
-        public const string Version = "3.9";
+        public const string Version = "3.9.1";
 
         public static bool FirstRun;
 
