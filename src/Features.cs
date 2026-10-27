@@ -199,6 +199,18 @@ namespace StartPack
 
         class TcpRow { public uint State, Pid; public int LocalPort; public IPEndPoint Remote; }
 
+        // Слушает ли этот порт процесс с таким именем (например, прокси-порт INCY).
+        public static bool PortListenedBy(int port, string processName)
+        {
+            foreach (var r in TcpRows())
+            {
+                if (r.State != 2 || r.LocalPort != port) continue;
+                try { using (Process p = Process.GetProcessById((int)r.Pid)) return p.ProcessName.Equals(processName, StringComparison.OrdinalIgnoreCase); }
+                catch { return false; }
+            }
+            return false;
+        }
+
         [System.Runtime.InteropServices.DllImport("iphlpapi.dll", SetLastError = true)]
         static extern uint GetExtendedTcpTable(IntPtr table, ref int size, bool order, int af, int tableClass, uint reserved);
 
@@ -245,6 +257,148 @@ namespace StartPack
     }
 
     // ---------------------------------------------------------------- zapret: стратегии, остановка, подбор
+
+    // Замер одной стратегии zapret: из теста стратегий (utils\test results) или из проверки связи Старт-пака.
+    public class StrategyStat
+    {
+        public string Bat { get; set; }
+        public string When { get; set; }        // yyyy-MM-dd HH:mm
+        public string Source { get; set; }      // "test" — тест стратегий, "check" — проверка связи
+        public int YtMs { get; set; }           // -1 — нет ответа или не мерили
+        public int DcMs { get; set; }
+        public bool YtOk { get; set; }
+        public bool DcOk { get; set; }
+        public int Score { get; set; }          // 0…100: доля успешных проверок
+        public StrategyStat() { Bat = ""; When = ""; Source = ""; YtMs = -1; DcMs = -1; }
+    }
+
+    public static class StrategyQuality
+    {
+        // "best", "good", "bad", "none" или "" — не проверялась
+        public static string Of(Item it, string bat)
+        {
+            StrategyStat s = it.Strategies.FirstOrDefault(x => x.Bat.Equals(bat, StringComparison.OrdinalIgnoreCase));
+            if (s == null) return "";
+            if (!s.YtOk && !s.DcOk) return "none";
+            if (!s.YtOk || !s.DcOk || s.Score < 70 || Math.Max(s.YtMs, s.DcMs) > 1500) return "bad";
+            // «наилучшая» — самая надёжная и быстрая среди хороших (если сравнивать есть с чем)
+            var good = it.Strategies.Where(x => x.YtOk && x.DcOk && x.Score >= 70 && Math.Max(x.YtMs, x.DcMs) <= 1500).ToList();
+            if (good.Count >= 2)
+            {
+                StrategyStat best = good.OrderByDescending(x => x.Score).ThenBy(x => Avg(x)).First();
+                if (best == s) return "best";
+            }
+            return "good";
+        }
+
+        static int Avg(StrategyStat s)
+        {
+            int a = s.YtMs >= 0 ? s.YtMs : 3000, b = s.DcMs >= 0 ? s.DcMs : 3000;
+            return (a + b) / 2;
+        }
+
+        public static string Label(string q)
+        {
+            switch (q) { case "best": return "Наилучшее"; case "good": return "Хорошее"; case "bad": return "Плохое"; case "none": return "Нет связи"; }
+            return "не проверялась";
+        }
+
+        public static string Tip(Item it, string bat)
+        {
+            StrategyStat s = it.Strategies.FirstOrDefault(x => x.Bat.Equals(bat, StringComparison.OrdinalIgnoreCase));
+            if (s == null) return "Ещё не проверялась. Включите её и нажмите ↻ у связи — или «Подобрать тестом», чтобы проверить все сразу.";
+            Func<bool, int, string> v = (ok, ms) => !ok ? "нет связи" : ms >= 0 ? ms + " мс" : "есть связь";
+            string when = s.When;
+            DateTime d;
+            if (DateTime.TryParse(s.When, out d))
+                when = d.Date == DateTime.Today ? "сегодня в " + d.ToString("HH:mm") : d.Date == DateTime.Today.AddDays(-1) ? "вчера в " + d.ToString("HH:mm") : d.ToString("dd.MM в HH:mm");
+            return "YouTube: " + v(s.YtOk, s.YtMs) + "\nDiscord: " + v(s.DcOk, s.DcMs) +
+                (s.Source == "test" ? "\nУспешных проверок в тесте: " + s.Score + "%" : "") +
+                "\nЗамер: " + when + (s.Source == "test" ? ", тест стратегий" : ", проверка связи");
+        }
+
+        public static void Put(Item it, StrategyStat s)
+        {
+            it.Strategies.RemoveAll(x => x.Bat.Equals(s.Bat, StringComparison.OrdinalIgnoreCase));
+            it.Strategies.Add(s);
+        }
+
+        // Самый свежий файл результатов теста zapret — если ещё не учтён. true — что-то добавилось.
+        public static bool ImportTest(Item it)
+        {
+            try
+            {
+                string dir = Path.Combine(ZapretCtl.Dir(it) ?? "", "utils", "test results");
+                if (!Directory.Exists(dir)) return false;
+                FileInfo f = new DirectoryInfo(dir).GetFiles("test_results_*.txt").OrderByDescending(x => x.LastWriteTime).FirstOrDefault();
+                if (f == null || f.Name == it.TestImported) return false;
+                var stats = ParseTest(File.ReadAllLines(f.FullName), f.LastWriteTime);
+                foreach (StrategyStat s in stats)
+                {
+                    // свежий замер проверки связи не затираем более старым тестом
+                    StrategyStat old = it.Strategies.FirstOrDefault(x => x.Bat.Equals(s.Bat, StringComparison.OrdinalIgnoreCase));
+                    DateTime a, b;
+                    if (old != null && DateTime.TryParse(old.When, out a) && DateTime.TryParse(s.When, out b) && a > b) continue;
+                    Put(it, s);
+                }
+                it.TestImported = f.Name;
+                return stats.Count > 0;
+            }
+            catch { return false; }
+        }
+
+        // Блоки «Config: general (ALT).bat (Type: standard)» со строками «  YouTube Web : HTTP:OK TLS1.3:OK | Ping: 51 ms».
+        public static List<StrategyStat> ParseTest(IEnumerable<string> lines, DateTime when)
+        {
+            var list = new List<StrategyStat>();
+            StrategyStat cur = null;
+            int ok = 0, all = 0;
+            Action close = () =>
+            {
+                if (cur == null) return;
+                cur.Score = all > 0 ? ok * 100 / all : 0;
+                list.Add(cur);
+            };
+            bool ytAny = false, dcAny = false;
+            foreach (string raw in lines)
+            {
+                var m = Regex.Match(raw, @"^Config:\s*(.+?\.bat)\s*\(Type:\s*standard\)");
+                if (m.Success)
+                {
+                    if (cur != null) { if (!ytAny) cur.YtOk = false; if (!dcAny) cur.DcOk = false; }
+                    close();
+                    cur = new StrategyStat { Bat = m.Groups[1].Value.Trim(), When = when.ToString("yyyy-MM-dd HH:mm"), Source = "test", YtOk = true, DcOk = true };
+                    ok = 0; all = 0; ytAny = false; dcAny = false;
+                    continue;
+                }
+                if (raw.StartsWith("Config:") || raw.StartsWith("===")) { if (cur != null) { if (!ytAny) cur.YtOk = false; if (!dcAny) cur.DcOk = false; } close(); cur = null; continue; }
+                if (cur == null) continue;
+                var t = Regex.Match(raw, @"^\s+(.+?)\s*:\s*(.*?)\s*\|\s*Ping:\s*(.+)$");
+                if (!t.Success) continue;
+                string name = t.Groups[1].Value, http = t.Groups[2].Value, ping = t.Groups[3].Value;
+                int good = Regex.Matches(http, "OK").Count, bad = Regex.Matches(http, "ERROR|SSL|UNSUP").Count;
+                ok += good; all += good + bad;
+                var pm = Regex.Match(ping, @"(\d+)\s*ms");
+                int ms = pm.Success ? int.Parse(pm.Groups[1].Value) : -1;
+                bool works = good > 0 && good >= bad;
+                if (name.StartsWith("YouTube", StringComparison.OrdinalIgnoreCase))
+                {
+                    ytAny = true;
+                    if (!works) cur.YtOk = false;
+                    if (name.IndexOf("Web", StringComparison.OrdinalIgnoreCase) >= 0 || cur.YtMs < 0) cur.YtMs = ms;
+                }
+                else if (name.StartsWith("Discord", StringComparison.OrdinalIgnoreCase))
+                {
+                    dcAny = true;
+                    if (!works) cur.DcOk = false;
+                    if (name.IndexOf("Main", StringComparison.OrdinalIgnoreCase) >= 0 || cur.DcMs < 0) cur.DcMs = ms;
+                }
+            }
+            if (cur != null) { if (!ytAny) cur.YtOk = false; if (!dcAny) cur.DcOk = false; }
+            close();
+            return list;
+        }
+    }
 
     public static class ZapretCtl
     {

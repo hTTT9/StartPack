@@ -33,8 +33,10 @@ namespace StartPack
             vpnRows = new List<Control>(), koalaRows = new List<Control>(), incyRows = new List<Control>();
         NumericUpDown nKoalaServer;
 
-        static readonly string[] Types = { "", "happ", "spotify", "incy", "koala" };
-        static readonly string[] Kinds = { "", "zapret", "github-exe" };
+        static readonly string[] Types = { "", "happ", "spotify", "incy", "koala", "warp" };
+        readonly List<string> updValues = new List<string>();
+        string detected;   // что это за программа — по пути (Core.KindFromPath); null — своя программа
+        Label lType;
 
         int FieldW { get { return S(470); } }
 
@@ -85,12 +87,13 @@ namespace StartPack
             }
 
             Section("ОСОБЫЕ ВОЗМОЖНОСТИ", null);
-            cbType = new DarkCombo { Width = FieldW };
-            cbType.Items.AddRange(new object[] { "Нет — обычная программа", "Happ — VPN: подключение, сохранённые серверы", "Spotify — проверка и починка hosts",
-                "INCY — VPN: подключение", "Koala Clash — VPN: подключение, сервер по номеру строки" });
+            // тип не выбирается вручную: он следует из самой программы (Happ — это Happ, zapret — zapret)
+            cbType = new DarkCombo { Width = FieldW, Enabled = false };
+            cbType.Items.AddRange(new object[] { "Обычная программа", "Happ — VPN: подключение, сохранённые серверы", "Spotify — проверка и починка hosts",
+                "INCY — VPN: подключение", "Koala Clash — VPN: подключение, сервер по номеру строки", "Cloudflare WARP — VPN: подключение" });
             cbType.SelectedIndex = Math.Max(0, Array.IndexOf(Types, it.Special ?? ""));
-            cbType.SelectedIndexChanged += delegate { UpdateVisibility(); };
             Row("Тип", cbType, null);
+            lType = Hint("Определяется по программе в поле «Что запускать», вручную не меняется.", null);
 
             // общее для VPN
             cHappAuto = new Toggle("Подключаться сразу после запуска", "Если клиент уже открыт, Старт-пак только подключит его — без перезапуска.", it.HappAutoConnect);
@@ -133,13 +136,6 @@ namespace StartPack
 
             Section("ОБНОВЛЕНИЯ С GITHUB", null);
             cbUpd = new DarkCombo { Width = FieldW };
-            cbUpd.Items.AddRange(new object[]
-            {
-                "Нет",
-                "zapret-discord-youtube: новая папка рядом, списки переносятся",
-                "Один .exe из релизов GitHub: файл заменяется новым"
-            });
-            cbUpd.SelectedIndex = Math.Max(0, Array.IndexOf(Kinds, it.UpdateKind ?? ""));
             cbUpd.SelectedIndexChanged += OnKindChanged;
             Row("Обновления", cbUpd, null);
             tRepo = Field("Репозиторий", it.Repo, null, updRows);
@@ -160,7 +156,56 @@ namespace StartPack
             AcceptButton = ok;
             CancelButton = cancel;
             UpdateHostsState();
+            tPath.Box.TextChanged += delegate { OnPathChanged(); };
+            OnPathChanged();
+        }
+
+        // Путь поменялся — заново определить программу: тип, обновления и имя процесса следуют из неё.
+        void OnPathChanged()
+        {
+            detected = Core.KindFromPath(tPath.Text.Trim().Trim('"'));
+            cbType.SelectedIndex = Math.Max(0, Array.IndexOf(Types, Core.SpecialOf(detected)));
+            lType.Text = detected == null
+                ? "Обычная программа: Старт-пак запускает её и следит, что она работает. Тип определяется по программе в поле «Что запускать»."
+                : "Определено по программе в поле «Что запускать» — вручную не меняется.";
+            tProc.Enabled = detected == null;
+            if (detected != null)
+            {
+                var probe = new Item { Path = tPath.Text.Trim().Trim('"'), ProcessName = tProc.Text.Trim() };
+                Core.ApplyKind(probe, detected);
+                tProc.Text = probe.ProcessName;
+            }
+            FillUpdates();
             UpdateVisibility();
+        }
+
+        // Обновления: у известных программ — свои и не меняются; у своих — «нет» или «один exe из релизов GitHub».
+        void FillUpdates()
+        {
+            string keep = updValues.Count > 0 && cbUpd.SelectedIndex >= 0 ? updValues[cbUpd.SelectedIndex] : (src.UpdateKind ?? "");
+            cbUpd.Items.Clear();
+            updValues.Clear();
+            if (detected == "zapret") { cbUpd.Items.Add("zapret-discord-youtube: новая версия рядом, списки переносятся"); updValues.Add("zapret"); }
+            else if (detected == "tgws") { cbUpd.Items.Add("TG WS Proxy: новый exe из релизов GitHub"); updValues.Add("github-exe"); }
+            else if (detected != null) { cbUpd.Items.Add("Нет — программа обновляется сама"); updValues.Add(""); }
+            else
+            {
+                cbUpd.Items.Add("Нет"); updValues.Add("");
+                cbUpd.Items.Add("Один .exe из релизов GitHub: файл заменяется новым"); updValues.Add("github-exe");
+            }
+            cbUpd.Enabled = detected == null;
+            cbUpd.SelectedIndex = Math.Max(0, updValues.IndexOf(keep == "zapret" && detected == null ? "" : keep));
+            bool fixedRepo = detected == "zapret" || detected == "tgws";
+            if (fixedRepo)
+            {
+                var probe = new Item { Path = tPath.Text.Trim().Trim('"') };
+                Core.ApplyKind(probe, detected);
+                tRepo.Text = probe.Repo;
+                tAsset.Text = probe.Asset;
+            }
+            else if (detected != null) { tRepo.Text = ""; tAsset.Text = ""; }
+            tRepo.Enabled = !fixedRepo;
+            tAsset.Enabled = !fixedRepo && Kind() == "github-exe";
         }
 
         // ---------- построение строк
@@ -224,8 +269,8 @@ namespace StartPack
 
         // ---------- логика
 
-        string Special() { return Types[Math.Max(0, cbType.SelectedIndex)]; }
-        string Kind() { return Kinds[Math.Max(0, cbUpd.SelectedIndex)]; }
+        string Special() { return Core.SpecialOf(detected); }
+        string Kind() { return cbUpd.SelectedIndex >= 0 && cbUpd.SelectedIndex < updValues.Count ? updValues[cbUpd.SelectedIndex] : ""; }
 
         void UpdateVisibility()
         {
@@ -233,13 +278,12 @@ namespace StartPack
             string sp = Special();
             foreach (Control c in happRows) c.Visible = sp == "happ";
             foreach (Control c in spotifyRows) c.Visible = sp == "spotify";
-            foreach (Control c in vpnRows) c.Visible = sp == "happ" || sp == "incy" || sp == "koala";
+            foreach (Control c in vpnRows) c.Visible = sp == "happ" || sp == "incy" || sp == "koala" || sp == "warp";
             foreach (Control c in koalaRows) c.Visible = sp == "koala";
             foreach (Control c in incyRows) c.Visible = sp == "incy";
             if (sp == "incy" && tProc.Text.Trim().Length == 0) tProc.Text = "incy";
             if (sp == "koala" && tProc.Text.Trim().Length == 0) tProc.Text = "Koala Clash";
             foreach (Control c in updRows) c.Visible = Kind().Length > 0;
-            tAsset.Enabled = Kind() == "github-exe";
             if (sp == "happ")
             {
                 string now = HappCtl.CurrentServerName();
@@ -290,13 +334,8 @@ namespace StartPack
         void OnKindChanged(object sender, EventArgs e)
         {
             string k = Kind();
-            if (k == "zapret")
-            {
-                if (tRepo.Text.Trim().Length == 0) tRepo.Text = "Flowseal/zapret-discord-youtube";
-                if (tProc.Text.Trim().Length == 0) tProc.Text = "winws";
-                cAdmin.Checked = true;
-            }
-            else if (k == "github-exe" && tAsset.Text.Trim().Length == 0)
+            if (detected == null) tAsset.Enabled = k == "github-exe";
+            if (k == "github-exe" && detected == null && tAsset.Text.Trim().Length == 0)
             {
                 try { tAsset.Text = Path.GetFileName(Core.Expand(tPath.Text)); } catch { }
             }
@@ -321,8 +360,6 @@ namespace StartPack
                 tPath.Text = d.FileName;
                 if (tName.Text.Trim().Length == 0) tName.Text = Path.GetFileNameWithoutExtension(d.FileName);
                 if (tProc.Text.Trim().Length == 0) tProc.Text = Core.GuessProcess(d.FileName, Kind());
-                string sp = Core.GuessSpecial(d.FileName);
-                if (sp.Length > 0 && Special().Length == 0) cbType.SelectedIndex = Array.IndexOf(Types, sp);
             }
         }
 
@@ -376,6 +413,7 @@ namespace StartPack
             r.SpotifyCheckHosts = cSpotifyCheck.Checked;
             r.Watch = cWatch.Checked;
             r.WaitReady = cWait.Checked;
+            Core.ApplyKind(r, Core.KindFromPath(path));
             if (cOwnAuto != null && cOwnAuto.Checked != AutoStartCtl.IsEnabled(autoEntry))
             {
                 try { AutoStartCtl.SetEnabled(autoEntry, cOwnAuto.Checked); }

@@ -20,7 +20,7 @@ namespace StartPack
             bool h, i;
             VpnCtl.XrayOwners(running, out h, out i);
             vpn.Happ = h;
-            vpn.Incy = i;
+            vpn.Incy = IncyCtl.Connected(cfg.Items.FirstOrDefault(x => x.Special == "incy"), running, i);
             vpn.Warp = cfg.Items.Any(x => x.Special == "warp") && WarpCtl.Connected();
             vpn.KoalaRunning = KoalaCtl.AppRunning(running);
             if (!vpn.KoalaRunning) { vpn.Koala = null; return; }
@@ -41,8 +41,10 @@ namespace StartPack
                 return st != null && st.Tun;
             }
             bool h, i;
-            VpnCtl.XrayOwners(Core.RunningNames(), out h, out i);
-            return it.Special == "happ" ? h : i;
+            HashSet<string> now = Core.RunningNames();
+            VpnCtl.XrayOwners(now, out h, out i);
+            if (it.Special == "incy") { vpn.Incy = await Task.Run(() => IncyCtl.Connected(it, now, i)); return vpn.Incy; }
+            return h;
         }
 
         async Task<int> RunVpn(Item it, bool inSequence)
@@ -67,6 +69,8 @@ namespace StartPack
             }
             if (it.Special == "koala" && it.HappAutoConnect && KoalaCtl.PresetTun(true))
                 Journal.Write("koala", "в настройках Koala включён TUN — подключится при старте");
+            if (it.Special == "incy" && it.HappAutoConnect && IncyCtl.PresetAutoConnect(it, true))
+                Journal.Write("incy", "в настройках INCY включено «подключаться при запуске»");
 
             int r = TryLaunch(it);
             if (r != 0) return r;
@@ -80,6 +84,19 @@ namespace StartPack
             await HappCtl.WaitFor(() => Core.IsRunning(it, Core.RunningNames()), 20000);
             if (it.Special == "koala") await HappCtl.WaitFor(KoalaCtl.PipeExists, 25000);
             await Task.Delay(3000);
+            if (it.Special == "incy")
+            {
+                // INCY подключается сам (его настройка «подключаться при запуске») — подождать, прежде чем слать команду
+                SetMsg(it, "жду, пока INCY подключится…", false);
+                if (await WaitConnected(it, 15000))
+                {
+                    it.Busy = false;
+                    SetMsg(it, null, false);
+                    Journal.Write("incy", "подключён");
+                    RefreshState();
+                    return 0;
+                }
+            }
             return await VpnConnect(it) ? 0 : 2;
         }
 
@@ -99,9 +116,9 @@ namespace StartPack
                         break;
                     case "incy":
                         if (await ConnectedNow(it)) { ok = true; break; }
-                        IncyCtl.Send("connect");
+                        IncyCtl.Send(it, "connect");
                         ok = await WaitConnected(it, 20000);
-                        if (!ok) { IncyCtl.Send("connect"); ok = await WaitConnected(it, 12000); }
+                        if (!ok) { IncyCtl.Send(it, "connect"); ok = await WaitConnected(it, 12000); }
                         break;
                     case "warp":
                         string werr = null;
@@ -165,8 +182,10 @@ namespace StartPack
                 {
                     case "happ": off = await HappCtl.Disconnect(); break;
                     case "incy":
-                        IncyCtl.Send("disconnect");
-                        off = await HappCtl.WaitFor(() => { bool h, i; VpnCtl.XrayOwners(Core.RunningNames(), out h, out i); return !i; }, 10000);
+                        IncyCtl.Send(it, "disconnect");
+                        var sw = System.Diagnostics.Stopwatch.StartNew();
+                        while (sw.ElapsedMilliseconds < 10000 && await ConnectedNow(it)) await Task.Delay(600);
+                        off = !await ConnectedNow(it);
                         break;
                     case "warp":
                         await Task.Run(() => WarpCtl.Run("disconnect"));
@@ -251,6 +270,11 @@ namespace StartPack
                 var cap = new ToolStripMenuItem("Запомнить сервер, выбранный в Happ" + (string.IsNullOrEmpty(happServerName) ? "" : " («" + happServerName + "»)")) { Padding = new Padding(2, 3, 2, 3) };
                 cap.Click += delegate { CaptureHappServer(it); };
                 m.Items.Add(cap);
+            }
+            else if (it.Special == "warp")
+            {
+                m.Items.Add(new ToolStripMenuItem("WARP сам подключается к ближайшему серверу Cloudflare") { Checked = true, Enabled = false });
+                m.Items.Add(new ToolStripMenuItem("Выбирать сервер у WARP нельзя") { Enabled = false });
             }
             else
             {

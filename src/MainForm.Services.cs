@@ -63,7 +63,7 @@ namespace StartPack
                     break;
                 case "strategy":
                     ContextMenuStrip m = Menus.New();
-                    m.ShowImageMargin = false;
+                    m.ShowImageMargin = true;
                     m.ShowCheckMargin = true;
                     FillStrategies(m.Items, it);
                     m.Items.Add(new ToolStripSeparator());
@@ -365,6 +365,7 @@ namespace StartPack
             it.Busy = false;
             SetMsg(it, null, false);
             await ResumeVpns(paused);
+            if (StrategyQuality.ImportTest(it)) SaveCfg();
             string summary;
             string best = ZapretCtl.BestFromResults(it, since, out summary);
             if (best == null) { Status("Тест закрыт без результата."); Journal.Write("zapret", "тест без результата"); return; }
@@ -447,6 +448,7 @@ namespace StartPack
             netChecking = false;
             LayoutBar();
             Journal.Write("связь", string.Join(", ", NetSummary()));
+            RememberStrategy();
             UpdateOverlay();
             var bad = netTargets.Where(t => t.State == "fail").ToList();
             if (bad.Count > 0)
@@ -456,6 +458,24 @@ namespace StartPack
                 if (!Visible) Notify("Нет связи: " + string.Join(", ", bad.Select(t => t.Name)), "Нажмите, чтобы открыть Старт-пак.", ShowFromTray);
             }
             else if (manual) Status("Связь в порядке: " + string.Join(", ", netTargets.Select(t => t.Name + (t.Ms < 0 ? " работает" : " " + t.Ms + " мс"))) + "." + ViaVpnNote());
+        }
+
+        void RememberStrategy()
+        {
+            Item z = cfg.Items.FirstOrDefault(i => i.UpdateKind == "zapret" && Core.PathExists(i.Path));
+            NetTarget yt = netTargets.FirstOrDefault(t => t.Name == "YouTube"), dc = netTargets.FirstOrDefault(t => t.Name == "Discord");
+            if (z == null || yt == null || dc == null) return;
+            if (!Core.RunningNames().Contains("winws")) return;                                  // zapret выключен — замер не про стратегию
+            if (cfg.Items.Any(v => VpnCtl.IsVpn(v) && VpnCtl.IsConnected(v, vpn))) return;       // через VPN — замер не про zapret
+            if (yt.State != "ok" && yt.State != "fail" || dc.State != "ok" && dc.State != "fail") return;
+            StrategyQuality.Put(z, new StrategyStat
+            {
+                Bat = ZapretCtl.Current(z), When = DateTime.Now.ToString("yyyy-MM-dd HH:mm"), Source = "check",
+                YtOk = yt.State == "ok", DcOk = dc.State == "ok",
+                YtMs = yt.State == "ok" ? yt.Ms : -1, DcMs = dc.State == "ok" ? dc.Ms : -1,
+                Score = ((yt.State == "ok" ? 1 : 0) + (dc.State == "ok" ? 1 : 0)) * 50
+            });
+            SaveCfg();
         }
 
         string ViaVpnNote()

@@ -151,9 +151,103 @@ namespace StartPack
         }
     }
 
+    // INCY: ссылки incy://connect|disconnect (документация INCY-DEV/incy-docs).
+    // У переносной версии Windows не знает, чем открывать incy:// — поэтому команда передаётся самому incy.exe:
+    // второй запуск отдаёт её уже открытому INCY и сразу закрывается.
     public static class IncyCtl
     {
-        public static void Send(string cmd) { Core.ShellOpen("incy://" + cmd); }
+        static string ExeFor(Item it)
+        {
+            string p = it != null ? Core.Expand(it.Path) : "";
+            if (p.EndsWith("incy.exe", StringComparison.OrdinalIgnoreCase) && File.Exists(p)) return p;
+            foreach (Process pr in Process.GetProcessesByName("incy"))
+            {
+                string path = null;
+                try { path = Core.ProcessPath(pr.Id); } catch { }
+                pr.Dispose();
+                if (path != null && File.Exists(path)) return path;
+            }
+            return StartPack.Detect.Incy();
+        }
+
+        public static void Send(Item it, string cmd)
+        {
+            string url = "incy://" + cmd;
+            string exe = ExeFor(it);
+            if (exe != null && exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                using (Process.Start(new ProcessStartInfo(exe, url) { UseShellExecute = false, WorkingDirectory = Path.GetDirectoryName(exe) })) { }
+                return;
+            }
+            Core.ShellOpen(url);
+        }
+
+        // Файл настроек INCY: у переносной версии — рядом с программой, у установленной — в профиле.
+        public static string PrefsFile(Item it)
+        {
+            string exe = ExeFor(it);
+            var cands = new List<string>();
+            if (exe != null) cands.Add(Path.Combine(Path.GetDirectoryName(exe), "config", "preferences.json"));
+            foreach (string root in new[] { Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) })
+                foreach (string name in new[] { "incy", "INCY", ".incy" })
+                {
+                    cands.Add(Path.Combine(root, name, "preferences.json"));
+                    cands.Add(Path.Combine(root, name, "config", "preferences.json"));
+                }
+            return cands.FirstOrDefault(File.Exists);
+        }
+
+        // Включить в самом INCY «подключаться при запуске» (только пока INCY закрыт, иначе он перезапишет файл).
+        public static bool PresetAutoConnect(Item it, bool on) { return PresetFile(PrefsFile(it), on); }
+
+        public static bool PresetFile(string f, bool on)
+        {
+            try
+            {
+                if (f == null) return false;
+                string json = File.ReadAllText(f, Encoding.UTF8);
+                var m = Regex.Match(json, "\"autoConnect\"\\s*:\\s*(true|false)");
+                if (!m.Success || m.Groups[1].Value == (on ? "true" : "false")) return false;
+                json = json.Substring(0, m.Groups[1].Index) + (on ? "true" : "false") + json.Substring(m.Groups[1].Index + m.Groups[1].Length);
+                File.WriteAllText(f, json, new UTF8Encoding(false));
+                return true;
+            }
+            catch { return false; }
+        }
+
+        static int SocksPort(Item it)
+        {
+            try
+            {
+                string f = PrefsFile(it);
+                if (f == null) return 0;
+                var m = Regex.Match(File.ReadAllText(f, Encoding.UTF8), "\"socksPort\"\\s*:\\s*(\\d+)");
+                return m.Success ? int.Parse(m.Groups[1].Value) : 0;
+            }
+            catch { return 0; }
+        }
+
+        // Подключён ли INCY: его ядро xray (старые версии), свой туннель Wintun (режим TUN) или открытый им прокси-порт.
+        public static bool Connected(Item it, HashSet<string> running, bool xrayIncy)
+        {
+            if (xrayIncy) return true;
+            if (!running.Contains("incy")) return false;
+            try
+            {
+                foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+                {
+                    if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                    string n = ni.Name + " " + ni.Description;
+                    if (n.IndexOf("Wintun", StringComparison.OrdinalIgnoreCase) < 0 && n.IndexOf("incy", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    // туннели других клиентов тоже бывают на Wintun — их не считаем
+                    if (Regex.IsMatch(n, "happ|mihomo|meta|clash|koala|warp|wireguard|amnezia|sing-box|hiddify|nekobox|v2ray", RegexOptions.IgnoreCase)) continue;
+                    return true;
+                }
+            }
+            catch { }
+            int port = SocksPort(it);
+            return port > 0 && NetCheck.PortListenedBy(port, "incy");
+        }
     }
 
     public static class KoalaCtl

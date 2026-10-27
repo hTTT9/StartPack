@@ -164,6 +164,92 @@ namespace StartPack
                 Log("с чужой версией: " + SelfUpdate.Verify(me, new SelfUpdate.Info { Version = "9.9", Sha256 = hash }));
             }
 
+            if (Env("STARTPACK_TEST_KINDS"))
+            {
+                // «испорченные» карточки: тип и обновления не от той программы
+                string happ = Detect.Happ() ?? @"C:\Program Files\Happ\Happ.exe";
+                var c = new Config();
+                c.Items.Add(new Item { Name = "Happ как Koala", Path = happ, ProcessName = "Happ", Special = "koala", UpdateKind = "zapret", Repo = "Flowseal/zapret-discord-youtube" });
+                c.Items.Add(new Item { Name = "Блокнот с обновлениями zapret", Path = @"C:\Windows\notepad.exe", ProcessName = "notepad", Special = "happ", UpdateKind = "zapret", Repo = "Flowseal/zapret-discord-youtube" });
+                c.Items.Add(new Item { Name = "Своя с GitHub", Path = @"C:\Windows\notepad.exe", ProcessName = "notepad", UpdateKind = "github-exe", Repo = "someone/tool", Asset = "tool.exe" });
+                Item z = cfg.Items.FirstOrDefault(i => i.UpdateKind == "zapret");
+                if (z != null) c.Items.Add(new Item { Name = "zapret без обновлений", Path = z.Path, ProcessName = "", Special = "incy" });
+                string warp = Detect.Warp();
+                if (warp != null) c.Items.Add(new Item { Name = "WARP без типа", Path = warp, ProcessName = "x" });
+                foreach (Item i in c.Items) i.Normalize();
+                Core.Repair(c);
+                foreach (Item i in c.Items)
+                    Log("тип: «" + i.Name + "» → особый «" + i.Special + "», обновления «" + i.UpdateKind + "», репозиторий «" + i.Repo + "», процесс «" + i.ProcessName + "»");
+                // окно «Изменить» для Happ: тип и обновления заблокированы
+                Item hi = c.Items[0];
+                using (var f = new ItemForm(hi, "Изменить: Happ")) SnapDialog(f, testLog + ".edit-kind-happ.png");
+                using (var f = new ItemForm(c.Items[1], "Изменить: своя")) SnapDialog(f, testLog + ".edit-kind-own.png");
+
+                // INCY
+                string incy = Detect.Incy();
+                Log("INCY найден: " + (incy ?? "нет") + ", настройки: " + (IncyCtl.PrefsFile(null) ?? "нет") + ", подключён сейчас: " + IncyCtl.Connected(null, Core.RunningNames(), false));
+                string pf = IncyCtl.PrefsFile(null);
+                if (pf != null)
+                {
+                    string copy = System.IO.Path.Combine(Core.AppDir, "incy-prefs-copy.json");
+                    System.IO.File.Copy(pf, copy, true);
+                    bool changed = IncyCtl.PresetFile(copy, true);
+                    bool again = IncyCtl.PresetFile(copy, true);
+                    Log("INCY автоподключение (на копии настроек): включено = " + changed + ", повторно ничего не меняет = " + !again +
+                        ", в файле теперь: " + System.Text.RegularExpressions.Regex.Match(System.IO.File.ReadAllText(copy), "\"autoConnect\"\\s*:\\s*\\w+").Value);
+                }
+            }
+
+            if (Env("STARTPACK_TEST_QUALITY"))
+            {
+                Item z = cfg.Items.FirstOrDefault(i => i.UpdateKind == "zapret");
+                if (z != null)
+                {
+                    // результаты теста zapret — в его формате (как пишет utils\test zapret.ps1)
+                    var lines = new[]
+                    {
+                        "Config: general (ALT).bat (Type: standard)",
+                        "  Discord Main : HTTP:OK TLS1.2:OK TLS1.3:OK | Ping: 43 ms",
+                        "  Discord Gateway : HTTP:OK TLS1.2:OK TLS1.3:OK | Ping: 45 ms",
+                        "  YouTube Web : HTTP:OK TLS1.2:OK TLS1.3:OK | Ping: 51 ms",
+                        "  YouTube Image : HTTP:OK TLS1.2:OK TLS1.3:OK | Ping: 49 ms",
+                        "",
+                        "Config: general (ALT2).bat (Type: standard)",
+                        "  Discord Main : HTTP:OK TLS1.2:OK TLS1.3:OK | Ping: 88 ms",
+                        "  YouTube Web : HTTP:OK TLS1.2:OK TLS1.3:OK | Ping: 120 ms",
+                        "",
+                        "Config: general (ALT3).bat (Type: standard)",
+                        "  Discord Main : HTTP:OK TLS1.2:ERROR TLS1.3:OK | Ping: 60 ms",
+                        "  YouTube Web : HTTP:ERROR TLS1.2:SSL TLS1.3:ERROR | Ping: Timeout",
+                        "",
+                        "Config: general (FAKE TLS AUTO).bat (Type: standard)",
+                        "  Discord Main : HTTP:ERROR TLS1.2:ERROR TLS1.3:ERROR | Ping: Timeout",
+                        "  YouTube Web : HTTP:ERROR TLS1.2:ERROR TLS1.3:ERROR | Ping: Timeout",
+                        "",
+                        "=== ANALYTICS ===",
+                        "general (ALT).bat : HTTP OK:  12, ERR:   0, UNSUP:   0, Ping OK:   4, Fail:   0"
+                    };
+                    var stats = StrategyQuality.ParseTest(lines, DateTime.Now.AddMinutes(-30));
+                    foreach (StrategyStat s in stats)
+                    {
+                        StrategyQuality.Put(z, s);
+                        Log("замер: " + s.Bat + " — YouTube " + (s.YtOk ? s.YtMs + " мс" : "нет") + ", Discord " + (s.DcOk ? s.DcMs + " мс" : "нет") + ", успешно " + s.Score + "% → " + StrategyQuality.Label(StrategyQuality.Of(z, s.Bat)));
+                    }
+                    Log("не проверялась: general.bat → " + StrategyQuality.Label(StrategyQuality.Of(z, "general.bat")));
+                    Log("подсказка ALT: " + StrategyQuality.Tip(z, "general (ALT).bat").Replace("\n", " | "));
+                    // меню стратегий
+                    var m = Menus.New();
+                    m.ShowImageMargin = true; m.ShowCheckMargin = true;
+                    FillStrategies(m.Items, z);
+                    ThemeSubmenus(m.Items);
+                    lastMenu = m;
+                    m.Show(cards, new Point(S(300), S(20)));
+                    SnapScreen(testLog + ".strategies.png");
+                    Log("меню: " + string.Join(" / ", m.Items.Cast<ToolStripItem>().Take(6).Select(x => x.Text + " [" + ((ToolStripMenuItem)x).ShortcutKeyDisplayString + "]")));
+                    m.Close();
+                }
+            }
+
             if (Env("STARTPACK_TEST_RECYCLE"))
             {
                 // только тестовая папка рядом с exe

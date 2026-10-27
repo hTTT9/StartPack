@@ -593,6 +593,8 @@ namespace StartPack
                 Menus.Add(m.Items, "Перезапустить zapret", Glyph.Refresh, async delegate { await ZapretRestart(it); });
                 ToolStripMenuItem strat = Menus.Add(m.Items, "Стратегия", "", null);
                 FillStrategies(strat.DropDownItems, it);
+                var sdd = strat.DropDown as ToolStripDropDownMenu;
+                if (sdd != null) { sdd.ShowCheckMargin = true; sdd.ShowImageMargin = true; }
                 Menus.Add(m.Items, "Подобрать стратегию тестом", "", async delegate { await ZapretTest(it); });
             }
 
@@ -601,7 +603,7 @@ namespace StartPack
                 m.Items.Add(new ToolStripSeparator());
                 Menus.Add(m.Items, "Подключить", Glyph.Link, async delegate { await OnChip(it, "connect"); });
                 Menus.Add(m.Items, "Отключить", Glyph.Unlink, async delegate { await OnChip(it, "disconnect"); });
-                Menus.Add(m.Items, "Сервер", Glyph.Sync, delegate { ShowVpnServers(it); });
+                if (it.Special != "warp") Menus.Add(m.Items, "Сервер", Glyph.Sync, delegate { ShowVpnServers(it); });
                 if (Core.IsRunning(it, running))
                     Menus.Add(m.Items, "Закрыть " + VpnCtl.Title(it.Special) + " полностью", Glyph.Stop, async delegate { await StopItem(it); });
             }
@@ -667,14 +669,37 @@ namespace StartPack
 
         void FillStrategies(ToolStripItemCollection items, Item it)
         {
+            if (StrategyQuality.ImportTest(it)) SaveCfg();
             string cur = ZapretCtl.Current(it);
+            Theme t = Theme.Current;
             foreach (string bat in ZapretCtl.Strategies(it))
             {
                 string b = bat;
-                var mi = new ToolStripMenuItem(ZapretCtl.Pretty(bat)) { Checked = bat.Equals(cur, StringComparison.OrdinalIgnoreCase), Padding = new Padding(2, 3, 2, 3) };
+                string q = StrategyQuality.Of(it, bat);
+                Color qc = q == "best" ? t.Accent : q == "good" ? t.Green : q == "bad" ? t.Amber : q == "none" ? t.Red : t.TextFaint;
+                var mi = new ToolStripMenuItem(ZapretCtl.Pretty(bat))
+                {
+                    Checked = bat.Equals(cur, StringComparison.OrdinalIgnoreCase), Padding = new Padding(2, 3, 2, 3),
+                    ShortcutKeyDisplayString = StrategyQuality.Label(q), ShowShortcutKeys = true,
+                    Image = QualityDot(qc), ToolTipText = StrategyQuality.Tip(it, bat), Tag = "q:" + qc.ToArgb()
+                };
+                if (q == "best") mi.Font = Fonts.Semi(10f);
                 mi.Click += async delegate { await ZapretSwitch(it, b); };
                 items.Add(mi);
             }
+            ToolStrip owner = items.Count > 0 ? items[0].Owner : null;
+            if (owner != null) owner.ShowItemToolTips = true;
+        }
+
+        static Bitmap QualityDot(Color c)
+        {
+            var b = new Bitmap(16, 16);
+            using (Graphics g = Graphics.FromImage(b))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var br = new SolidBrush(c)) g.FillEllipse(br, 4, 4, 8, 8);
+            }
+            return b;
         }
 
         static void ThemeSubmenus(ToolStripItemCollection items)

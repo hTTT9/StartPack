@@ -576,6 +576,10 @@ namespace StartPack
         {
             Theme t = Theme.Current;
             Color c = e.Item.Tag as string == "danger" ? t.Red : t.Text;
+            string tag = e.Item.Tag as string;
+            int argb;
+            // «Наилучшее / Плохое…» справа в списке стратегий — цветом качества
+            if (tag != null && tag.StartsWith("q:") && e.Text != e.Item.Text && int.TryParse(tag.Substring(2), out argb)) c = Color.FromArgb(argb);
             e.TextColor = e.Item.Enabled ? c : t.TextFaint;
             base.OnRenderItemText(e);
         }

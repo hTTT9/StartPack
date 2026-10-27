@@ -18,8 +18,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Старт-пак")]
 [assembly: System.Reflection.AssemblyProduct("Старт-пак")]
-[assembly: System.Reflection.AssemblyVersion("3.9.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("3.9.1.0")]
+[assembly: System.Reflection.AssemblyVersion("3.9.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("3.9.2.0")]
 
 namespace StartPack
 {
@@ -87,6 +87,8 @@ namespace StartPack
         public bool Watch { get; set; }           // сторож: следить, что программа не закрылась
         public bool WaitReady { get; set; }       // в «Запустить всё» ждать, пока процесс появится
         public int VpnServer { get; set; }        // Koala: номер строки сервера (0 — как выбрано в самой Koala)
+        public List<StrategyStat> Strategies { get; set; }   // zapret: последний замер каждой стратегии
+        public string TestImported { get; set; }  // zapret: какой файл результатов теста уже учтён
 
         // Состояние во время работы — в файл не пишется.
         [ScriptIgnore] public string Message { get; set; }
@@ -104,6 +106,7 @@ namespace StartPack
         {
             Name = ""; Path = ""; Args = ""; ProcessName = ""; UpdateKind = ""; Repo = ""; Asset = ""; InstalledTag = "";
             Special = ""; HappServer = ""; HostsFixDir = ""; HappPresets = new List<HappPreset>();
+            Strategies = new List<StrategyStat>(); TestImported = "";
             SkipIfRunning = true; Enabled = true; Progress = -1; HostsState = ""; HostsIp = "";
             Id = System.Guid.NewGuid().ToString("N").Substring(0, 12); WaitReady = true;
         }
@@ -130,6 +133,9 @@ namespace StartPack
             UpdateKind = UpdateKind ?? ""; Repo = Repo ?? ""; Asset = Asset ?? ""; InstalledTag = InstalledTag ?? "";
             Special = Special ?? ""; HappServer = HappServer ?? ""; HostsFixDir = HostsFixDir ?? "";
             if (HappPresets == null) HappPresets = new List<HappPreset>();
+            if (Strategies == null) Strategies = new List<StrategyStat>();
+            Strategies.RemoveAll(s => s == null || string.IsNullOrEmpty(s.Bat));
+            TestImported = TestImported ?? "";
             HappPresets.RemoveAll(p => p == null);
             foreach (HappPreset p in HappPresets) { p.Name = p.Name ?? ""; if (p.Values == null) p.Values = new List<RegVal>(); }
             if (Delay < 0) Delay = 0;
@@ -141,6 +147,7 @@ namespace StartPack
         {
             Item c = (Item)MemberwiseClone();
             c.HappPresets = HappPresets.Select(p => p.Copy()).ToList();
+            c.Strategies = Strategies.ToList();
             return c;
         }
     }
@@ -254,7 +261,7 @@ namespace StartPack
         public const string Title = "Старт-пак";
         public const string IpsetNone = "203.0.113.113/32";
         public const int ConfigVersion = 6;
-        public const string Version = "3.9.1";
+        public const string Version = "3.9.2";
 
         public static bool FirstRun;
 
@@ -526,6 +533,16 @@ namespace StartPack
                     }
                 }
             }
+            foreach (Item it in c.Items)
+            {
+                if (Expand(it.Path).Length == 0 || !PathExists(it.Path)) continue;   // заготовка или файл пропал — не трогать
+                string was = (it.Special.Length > 0 ? it.Special : "-") + "/" + (it.UpdateKind.Length > 0 ? it.UpdateKind : "-");
+                if (ApplyKind(it, KindFromPath(it.Path)))
+                {
+                    Journal.Write("список", it.Name + ": тип и обновления приведены к самой программе (было " + was + ")");
+                    if (!fixes.Contains(it.Name)) fixes.Add(it.Name);
+                }
+            }
             LastRepairs = fixes;
             return fixes;
         }
@@ -670,6 +687,96 @@ namespace StartPack
                 return n.Equals("Update", StringComparison.OrdinalIgnoreCase) ? "" : n;
             }
             return "";
+        }
+
+        // Что это за программа — по самому файлу (и по цели ярлыка), а не по выбору в окне «Изменить».
+        // null — своя программа, без особых возможностей.
+        public static string KindFromPath(string raw)
+        {
+            string p = Expand(raw);
+            if (p.Length == 0) return null;
+            string k = KindOfFile(p);
+            if (k == null && p.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
+            {
+                string target = ResolveLnk(p);
+                if (target.Length > 0) k = KindOfFile(target);
+            }
+            return k;
+        }
+
+        static string KindOfFile(string p)
+        {
+            string f = SafeFileName(p);
+            if (IsShell(p))
+            {
+                string low = p.ToLowerInvariant();
+                if (low.Contains("spotify")) return "spotify";
+                if (low.Contains("telegram")) return "telegram";
+                if (low.Contains("discord")) return "discord";
+                if (low.Contains("cloudflare")) return "warp";
+                return null;
+            }
+            string ext = (Path.GetExtension(f) ?? "").ToLowerInvariant();
+            if (ext == ".bat" || ext == ".cmd")
+            {
+                string d = SafeDir(p);
+                return d != null && File.Exists(Path.Combine(d, "service.bat")) && File.Exists(Path.Combine(d, "bin", "winws.exe")) ? "zapret" : null;
+            }
+            if (ext == ".exe" && f.StartsWith("TgWsProxy", StringComparison.OrdinalIgnoreCase)) return "tgws";
+            switch (f.ToLowerInvariant())
+            {
+                case "spotify.exe": return "spotify";
+                case "telegram.exe": return "telegram";
+                case "discord.exe": return "discord";
+                case "update.exe": return SafeFileName(SafeDir(p) ?? "").Equals("Discord", StringComparison.OrdinalIgnoreCase) ? "discord" : null;
+                case "cloudflare warp.exe": return "warp";
+                case "happ.exe": case "happ.lnk": return "happ";
+                case "incy.exe": return "incy";
+                case "koala clash.exe": return "koala";
+            }
+            return null;
+        }
+
+        public static string SpecialOf(string kind)
+        {
+            switch (kind) { case "spotify": case "warp": case "happ": case "incy": case "koala": return kind; }
+            return "";
+        }
+
+        static readonly string[] KnownRepos = { "Flowseal/zapret-discord-youtube", "Flowseal/tg-ws-proxy" };
+
+        // Привести «особые» поля карточки в соответствие с программой: Happ — это Happ, zapret — zapret.
+        // У своих программ — никаких типов VPN и обновлений zapret (только «один exe с GitHub», если задан свой репозиторий).
+        // true — что-то пришлось исправить.
+        public static bool ApplyKind(Item it, string kind)
+        {
+            string sp = SpecialOf(kind), upd = "", repo = "", asset = "", proc = it.ProcessName;
+            switch (kind)
+            {
+                case "zapret": upd = "zapret"; repo = KnownRepos[0]; proc = "winws"; break;
+                case "tgws": upd = "github-exe"; repo = KnownRepos[1]; asset = "TgWsProxy_windows.exe"; proc = Path.GetFileNameWithoutExtension(Expand(it.Path)); break;
+                case "spotify": proc = "Spotify"; break;
+                case "telegram": proc = "Telegram"; break;
+                case "discord": proc = "Discord"; break;
+                case "warp": proc = "Cloudflare WARP"; break;
+                case "happ": proc = "Happ"; break;
+                case "incy": proc = "incy"; break;
+                case "koala": proc = "Koala Clash"; break;
+                default:
+                    bool own = it.UpdateKind == "github-exe" && it.Repo.Length > 0 && !KnownRepos.Any(r => r.Equals(it.Repo, StringComparison.OrdinalIgnoreCase));
+                    if (own) { upd = "github-exe"; repo = it.Repo; asset = it.Asset; }
+                    break;
+            }
+            bool changed = it.Special != sp || it.UpdateKind != upd || it.Repo != repo || it.Asset != asset || (proc.Length > 0 && it.ProcessName != proc);
+            if (!changed) return false;
+            if (it.UpdateKind != upd) { it.InstalledTag = ""; it.InstalledSize = 0; it.LatestTag = null; it.LatestUrl = null; it.LocalVersion = null; it.CheckError = null; }
+            it.Special = sp;
+            it.UpdateKind = upd;
+            it.Repo = repo;
+            it.Asset = asset;
+            if (proc.Length > 0) it.ProcessName = proc;
+            if (kind == "zapret") it.Admin = true;
+            return true;
         }
 
         public static string GuessSpecial(string raw)
@@ -1363,7 +1470,22 @@ namespace StartPack
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "incy", "incy.exe")
             })
                 if (File.Exists(f)) return f;
-            return StartApp("INCY", "Incy", "incy");
+            string app = StartApp("INCY", "Incy", "incy");
+            if (app != null) return app;
+            foreach (string root in new[] { Downloads, Desktop, Path.Combine(Home, "Documents"), Home })
+            {
+                try
+                {
+                    if (!Directory.Exists(root)) continue;
+                    foreach (string d in Directory.GetDirectories(root))
+                    {
+                        foreach (string c in new[] { Path.Combine(d, "incy.exe"), Path.Combine(d, "incy", "incy.exe") })
+                            if (File.Exists(c)) return c;
+                    }
+                }
+                catch { }
+            }
+            return null;
         }
 
         public static string Warp()
