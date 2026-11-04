@@ -5,9 +5,9 @@ name: Linux
 # выпуск по метке linux-v* (не «последний»: последним остаётся выпуск для Windows).
 on:
   push:
-    branches: [linux]
+    branches: [main, linux]
     tags: ['linux-v*']
-    paths-ignore: ['**.md']
+    paths: ['linux/**', '.github/workflows/linux.yml']
   pull_request:
     paths: ['linux/**', '.github/workflows/linux.yml']
   workflow_dispatch:

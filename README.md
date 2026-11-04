@@ -30,7 +30,7 @@
 
 ## Linux (бета)
 
-Есть версия для Ubuntu, Debian, Fedora и РЕД ОС — в [выпусках с меткой linux-v](https://github.com/hTTT9/StartPack/releases):
+Есть версия для Ubuntu, Debian, Fedora и РЕД ОС — **[скачать бету 1.0.0](https://github.com/hTTT9/StartPack/releases/tag/linux-v1.0.0)** (новые версии — в [выпусках с меткой linux-v](https://github.com/hTTT9/StartPack/releases)):
 
 - Ubuntu и Debian — `startpack_<версия>_amd64.deb`, двойной щелчок или `sudo apt install ./startpack_<версия>_amd64.deb`;
 - Fedora и РЕД ОС — `startpack-<версия>-1.x86_64.rpm`, `sudo dnf install ./startpack-<версия>-1.x86_64.rpm`;
