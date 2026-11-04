@@ -121,12 +121,14 @@ public static class Sys
     {
         var psi = new ProcessStartInfo(file)
         {
-            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true,
+            UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,
             WorkingDirectory = workDir ?? Store.Home
         };
         foreach (string a in args) psi.ArgumentList.Add(a);
         if (env != null) foreach (var kv in env) psi.Environment[kv.Key] = kv.Value;
         using var p = System.Diagnostics.Process.Start(psi);
+        // Пустой ввод: если скрипт вдруг спросит что-то через read, он получит «конец ввода», а не зависнет.
+        try { p.StandardInput.Close(); } catch { }
         var sb = new System.Text.StringBuilder();
         var o = p.StandardOutput.ReadToEndAsync();
         var e = p.StandardError.ReadToEndAsync();

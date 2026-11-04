@@ -31,7 +31,10 @@ public static class SelfTest
 
     public static int Run(string logFile)
     {
-        string root = Path.Combine(Path.GetTempPath(), "startpack-selftest-" + Guid.NewGuid().ToString("N")[..8]);
+        // В домашней папке, как у людей (а не в /tmp): так видно, если службе или nfqws не хватает прав на путь в ~.
+        string home = Environment.GetEnvironmentVariable("HOME");
+        string baseDir = !string.IsNullOrEmpty(home) && Directory.Exists(home) ? Path.Combine(home, ".cache") : Path.GetTempPath();
+        string root = Path.Combine(baseDir, "startpack-selftest-" + Guid.NewGuid().ToString("N")[..8]);
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.Combine(root, "config"));
         Environment.SetEnvironmentVariable("XDG_DATA_HOME", Path.Combine(root, "data"));
         log = new StreamWriter(logFile) { AutoFlush = true };
@@ -121,14 +124,24 @@ public static class SelfTest
             var strategies = Zapret.Strategies();
             Note("стратегий: " + strategies.Count + " — " + string.Join(", ", strategies.Take(8).Select(Zapret.Pretty)));
             Ok(strategies.Contains("general_alt.bat"), "есть стратегия ALT (general_alt.bat)");
+            if (err != null || !Zapret.Installed || strategies.Count == 0) { Note("zapret не установился — дальше проверять нечего"); return; }
 
             back.Zapret.Strategy = "general_alt.bat";
             int zr = await e.RunOne(z, false);
             Ok(zr == 0 && Zapret.Running(), "zapret запускается службой, nfqws работает", z.Message);
+            if (!Zapret.Running()) await Journal();
             var nft = await Sys.RunElevated("nft", new[] { "list", "table", "inet", "zapretunix" }, 20000);
             Ok(nft.Code == 0 && nft.Output.Contains("queue"), "правила nftables на месте (таблица zapretunix)");
-            string conf = File.ReadAllText(Zapret.ConfFile);
+            string conf = File.Exists(Zapret.ConfFile) ? File.ReadAllText(Zapret.ConfFile) : "";
             Ok(conf.Contains("strategy=general_alt.bat"), "conf.env записан");
+
+            // Пакеты идут через nfqws: если он их не отпускает, сайты перестают открываться. Проверяем, что интернет жив.
+            foreach (string url in new[] { "https://discord.com", "https://www.youtube.com", "https://example.com" })
+            {
+                var c2 = await Sys.Run("curl", new[] { "-sS", "-o", "/dev/null", "-w", "%{http_code}", "--max-time", "20", url }, 30000);
+                Ok(c2.Code == 0 && c2.Output.Trim().Length == 3 && c2.Output.Trim() != "000", "при включённом zapret открывается " + url, "код " + c2.Output.Trim());
+            }
+            await Journal();
 
             string alt2 = strategies.Contains("general_alt2.bat") ? "general_alt2.bat" : strategies.First(s => s != "general_alt.bat");
             await e.SwitchStrategy(z, alt2);
@@ -144,6 +157,14 @@ public static class SelfTest
             var rm = await Sys.RunElevated("/usr/bin/env", new[] { "bash", Zapret.Script, "service", "remove" }, 60000, Zapret.Dir);
             Ok(rm.Code == 0 && !Zapret.ServiceInstalled, "служба zapret удаляется");
         }
+    }
+
+    // Последние строки журнала службы — чтобы по логу GitHub было видно, что говорил nfqws.
+    static async Task Journal()
+    {
+        if (Sys.Which("journalctl") == null) return;
+        var j = await Sys.RunElevated("journalctl", new[] { "-u", "zapret_discord_youtube", "-n", "25", "--no-pager", "-o", "cat" }, 20000);
+        foreach (string l in j.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)) Note("журнал: " + l);
     }
 }
 

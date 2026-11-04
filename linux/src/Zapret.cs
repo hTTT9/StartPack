@@ -10,6 +10,10 @@ public static class Zapret
 {
     public const string Repo = "Sergeydigl3/zapret-discord-youtube-linux";
 
+    // Проверенная версия переноса (master, 17.08.2026). Новые версии — только вместе с обновлением Старт-пака,
+    // чтобы чужая правка не сломала установку у людей. Стратегии Flowseal и nfqws этот перенос тоже закрепляет у себя.
+    public const string Rev = "69db771b527ba11ca71efe28728a7f9491eec352";
+
     // Своя папка Старт-пака; если человек уже клонировал перенос в домашнюю папку — берём его.
     public static string Dir
     {
@@ -105,7 +109,8 @@ public static class Zapret
     {
         if (!Installed) return null;
         Log.Write("zapret", "остановка");
-        var r = await Sys.RunElevated("/usr/bin/env", new[] { "bash", Script, "service", ServiceInstalled ? "stop" : "kill" }, 60000, Dir);
+        string[] cmd = ServiceInstalled ? new[] { "bash", Script, "service", "stop" } : new[] { "bash", Script, "kill" };
+        var r = await Sys.RunElevated("/usr/bin/env", cmd, 60000, Dir);
         if (r.Code != 0) return Short(r);
         for (int i = 0; i < 40 && Running(); i++) await Task.Delay(250);
         return Running() ? "zapret не остановился" : null;
@@ -145,7 +150,7 @@ public static class Zapret
         {
             progress("скачиваю zapret для Linux…");
             string tgz = Path.Combine(tmp, "src.tar.gz");
-            await Net.Download("https://github.com/" + Repo + "/archive/refs/heads/main.tar.gz", tgz);
+            await Net.Download("https://github.com/" + Repo + "/archive/" + Rev + ".tar.gz", tgz);
             var x = await Sys.Run("tar", new[] { "-xzf", tgz, "-C", tmp });
             if (x.Code != 0) return "архив не распаковался: " + x.Output;
             string src = Directory.GetDirectories(tmp).FirstOrDefault(d => File.Exists(Path.Combine(d, "service.sh")));
@@ -158,12 +163,25 @@ public static class Zapret
             if (keepConf != null) File.WriteAllText(Path.Combine(own, "conf.env"), keepConf);
 
             progress("скачиваю стратегии и nfqws…");
-            var dl = await Sys.Run("/usr/bin/env", new[] { "bash", Path.Combine(own, "service.sh"), "download-deps", "--default" }, 900000, own);
+            // download-deps зовёт sudo только чтобы стереть свой же архив в /tmp. Из окна программы терминала нет,
+            // и sudo там не спросит пароль, а упадёт — подкладываем «sudo», который просто выполняет команду от пользователя.
+            // (не в /tmp: там бывает noexec)
+            string shim = Path.Combine(Store.DataDir, ".nosudo");
+            Directory.CreateDirectory(shim);
+            string fakeSudo = Path.Combine(shim, "sudo");
+            File.WriteAllText(fakeSudo, "#!/bin/sh\nwhile [ $# -gt 0 ] && [ \"${1#-}\" != \"$1\" ]; do shift; done\nexec \"$@\"\n");
+            File.SetUnixFileMode(fakeSudo, (UnixFileMode)0b111_101_101);
+            var env = new Dictionary<string, string> { ["PATH"] = shim + ":" + (Environment.GetEnvironmentVariable("PATH") ?? "/usr/bin:/bin") };
+            var dl = await Sys.Run("/usr/bin/env", new[] { "bash", Path.Combine(own, "service.sh"), "download-deps", "--default" }, 900000, own, env);
             Log.Write("zapret", "download-deps: код " + dl.Code + " — " + dl.Output.Replace('\n', ' '));
             if (!IsComplete(own)) return "не скачались стратегии или nfqws (код " + dl.Code + ") — подробности в журнале";
             Log.Write("zapret", "установлен в " + own + ", стратегий: " + Strategies().Count);
             return null;
         }
-        finally { try { Directory.Delete(tmp, true); } catch { } }
+        finally
+        {
+            try { Directory.Delete(tmp, true); } catch { }
+            try { Directory.Delete(Path.Combine(Store.DataDir, ".nosudo"), true); } catch { }
+        }
     }
 }
