@@ -32,9 +32,28 @@
 
 Есть версия для Ubuntu, Debian, Fedora и РЕД ОС — **[скачать бету 1.0.0](https://github.com/hTTT9/StartPack/releases/tag/linux-v1.0.0)** (новые версии — в [выпусках с меткой linux-v](https://github.com/hTTT9/StartPack/releases)):
 
-- Ubuntu и Debian — `startpack_<версия>_amd64.deb`, двойной щелчок или `sudo apt install ./startpack_<версия>_amd64.deb`;
-- Fedora и РЕД ОС — `startpack-<версия>-1.x86_64.rpm`, `sudo dnf install ./startpack-<версия>-1.x86_64.rpm`;
-- любой Linux — `StartPack-x86_64.AppImage`: сделайте файл исполняемым и запустите.
+**Ubuntu, Debian, Linux Mint** — скачайте `startpack_1.0.0_amd64.deb` и откройте двойным щелчком или в терминале, в папке с файлом:
+
+```bash
+sudo apt install ./startpack_1.0.0_amd64.deb
+```
+
+**Fedora и РЕД ОС** — скачайте `startpack-1.0.0-1.x86_64.rpm` и в терминале, в папке с файлом:
+
+```bash
+sudo dnf install ./startpack-1.0.0-1.x86_64.rpm
+```
+
+**Любой другой Linux** — скачайте `StartPack-x86_64.AppImage`, сделайте исполняемым и запустите:
+
+```bash
+chmod +x StartPack-x86_64.AppImage
+./StartPack-x86_64.AppImage
+```
+
+Если AppImage не запускается (в системе нет FUSE) — `./StartPack-x86_64.AppImage --appimage-extract-and-run`.
+
+После установки «Старт-пак» появится в меню программ. Когда программа ставит или запускает zapret, система спросит пароль администратора — zapret работает как системная служба. Удалить: `sudo apt remove startpack` или `sudo dnf remove startpack`. Если что-то не так — пришлите журнал `~/.local/share/startpack/startpack.log` и название системы с версией.
 
 zapret на Linux — [перенос стратегий Flowseal](https://github.com/Sergeydigl3/zapret-discord-youtube-linux), Старт-пак ставит его сам. Исходники — в папке [`linux/`](linux/).
 

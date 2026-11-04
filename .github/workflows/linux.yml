@@ -140,5 +140,5 @@ jobs:
           inside=$(grep -oP '(?<=<Version>)[^<]+' linux/StartPack.Linux.csproj)
           [ "$inside" = "$ver" ] || { echo "Метка $ver, а в программе $inside"; exit 1; }
           awk -v v="## $ver" '$0==v{on=1;next} /^## /{if(on)exit} on' linux/CHANGELOG.md > notes.md
-          printf '\nКак установить: Ubuntu и Debian — startpack_%s_amd64.deb, Fedora и РЕД ОС — startpack-%s-1.x86_64.rpm, любой Linux — StartPack-x86_64.AppImage (сделайте файл исполняемым и запустите).\n' "$ver" "$ver" >> notes.md
+          sed "s/{ver}/$ver/g" linux/packaging/release-install.md >> notes.md
           gh release create "$tag" pkg/* --title "Старт-пак для Linux $ver (бета)" --notes-file notes.md --latest=false --prerelease
