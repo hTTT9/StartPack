@@ -465,6 +465,7 @@ namespace StartPack
                 LayoutHeader();
             }
             RefreshVpn();
+            WatchVpnConflict();
             Watchdog();
             int on = cfg.Items.Count(i => i.Enabled);
             lblCount.Text = cfg.Items.Count == 0 ? "" : string.Format("{0} в списке · {1} в «Запустить всё»", cfg.Items.Count, on);
@@ -1105,14 +1106,38 @@ namespace StartPack
             int started = 0, already = 0, errors = 0;
             Profile prof = cfg.Active;
             Journal.Write("запуск", "«Запустить всё», профиль «" + (prof != null ? prof.Name : "-") + "»");
+            Item skippedZapret = null;
+            bool vpnComing = cfg.ZapretPauseForVpn && cfg.Items.Any(v => v.Enabled && VpnCtl.IsVpn(v) && v.HappAutoConnect && Core.PathExists(v.Path));
             try
             {
                 foreach (Item it in cfg.Items.ToList())
                 {
                     if (!it.Enabled) continue;
                     if (stopRun) { Journal.Write("запуск", "остановлено пользователем перед «" + it.Name + "»"); break; }
+                    if (vpnComing && it.UpdateKind == "zapret" && !Core.RunningNames().Contains("winws"))
+                    {
+                        // вместе с VPN zapret ломает Discord и YouTube — его место займёт VPN
+                        skippedZapret = it;
+                        zapretPausedForVpn = true;
+                        SetMsg(it, "не запущен: подключается VPN", false);
+                        Journal.Write("запуск", it.Name + ": пропущен — в «Запустить всё» есть VPN с автоподключением");
+                        continue;
+                    }
                     int r = await RunOne(it, true);
                     if (r == 0) started++; else if (r == 1) already++; else errors++;
+                }
+                if (skippedZapret != null && !stopRun)
+                {
+                    RefreshVpn();
+                    if (!AnyVpnConnected())
+                    {
+                        // VPN так и не подключился — тогда хотя бы zapret
+                        zapretPausedForVpn = false;
+                        Journal.Write("запуск", "VPN не подключился — запускаю zapret");
+                        int r = await RunOne(skippedZapret, true);
+                        if (r == 0) started++; else if (r == 1) already++; else errors++;
+                    }
+                    else SetMsg(skippedZapret, "на паузе, пока подключён VPN", false);
                 }
             }
             finally

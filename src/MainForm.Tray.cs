@@ -211,6 +211,7 @@ namespace StartPack
             foreach (Item it in cfg.Items)
             {
                 if (!it.Watch || Core.ProcNames(it).Length == 0 || it.Special == "happ") { wasRunning.Remove(it); continue; }
+                if (zapretPausedForVpn && it.UpdateKind == "zapret") { wasRunning.Remove(it); continue; }   // на паузе из-за VPN — не поднимать
                 bool now = Core.IsRunning(it, running);
                 bool prev;
                 bool known = wasRunning.TryGetValue(it, out prev);

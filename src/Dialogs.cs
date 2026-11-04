@@ -647,6 +647,8 @@ namespace StartPack
             t.Controls.Add(Sec("ЗАПУСК", false));
             AddToggle(t, "Крестик сворачивает к часам", "Окно не закрывается, а прячется в значок возле часов: перезапуск закрывшихся программ и Ctrl+Alt+S продолжают работать. Выйти совсем — «⋯» → «Выйти из Старт-пака».", cfg.Tray,
                 on => { cfg.Tray = on; Changed(); return true; });
+            AddToggle(t, "Не держать zapret и VPN включёнными вместе", "Вместе они ломают Discord и YouTube. VPN подключился — zapret останавливается, отключился — запускается снова. Windows спросит права администратора.", cfg.ZapretPauseForVpn,
+                on => { cfg.ZapretPauseForVpn = on; return true; });
             AddToggle(t, "Горячая клавиша Ctrl+Alt+S — запустить всё", "Работает из любой программы, пока Старт-пак открыт или в трее.", cfg.Hotkey,
                 on => { cfg.Hotkey = on; Changed(); return true; });
             AddToggle(t, "Прятать окно после «Запустить всё»", "Если всё запустилось без ошибок и обновлений нет: в трей, а без трея — закрыть.", cfg.CloseAfterLaunch,

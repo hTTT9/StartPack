@@ -277,6 +277,68 @@ namespace StartPack
             RefreshState();
         }
 
+        // ---------------------------------------------------------------- zapret и VPN не вместе
+
+        bool zapretPausedForVpn;     // zapret остановлен из-за VPN — вернуть, когда VPN отключится
+        bool conflictNotified;       // о конфликте уже предупредили (VPN включили не из Старт-пака)
+
+        Item ZapretItem() { return cfg.Items.FirstOrDefault(i => i.UpdateKind == "zapret" && Core.PathExists(i.Path)); }
+        bool AnyVpnConnected() { return cfg.Items.Any(v => VpnCtl.IsVpn(v) && VpnCtl.IsConnected(v, vpn)); }
+
+        // VPN подключился: zapret ему мешает — остановить (и запомнить, чтобы потом вернуть).
+        async Task PauseZapretForVpn(Item vpnItem)
+        {
+            Item z = ZapretItem();
+            if (!cfg.ZapretPauseForVpn || z == null || z.Busy || !Core.RunningNames().Contains("winws")) return;
+            Journal.Write("zapret", "останавливаю: подключён " + vpnItem.Name + " (вместе они ломают Discord и YouTube)");
+            Status("Подключён " + vpnItem.Name + " — останавливаю zapret: вместе они ломают Discord и YouTube.");
+            await ZapretStop(z);
+            if (!Core.RunningNames().Contains("winws"))
+            {
+                zapretPausedForVpn = true;
+                SetMsg(z, "на паузе, пока подключён VPN", false);
+                Status("zapret на паузе, пока подключён " + vpnItem.Name + ". Отключите VPN — zapret запустится снова.");
+            }
+        }
+
+        // VPN отключился: если zapret остановили из-за него — запустить снова.
+        async Task ResumeZapretAfterVpn()
+        {
+            if (!zapretPausedForVpn) return;
+            RefreshVpn();
+            if (AnyVpnConnected()) return;   // другой VPN ещё подключён
+            zapretPausedForVpn = false;
+            Item z = ZapretItem();
+            if (z == null || Core.RunningNames().Contains("winws")) return;
+            Journal.Write("zapret", "VPN отключён — запускаю zapret снова");
+            int r = await RunOne(z, false);
+            Status(r == 0 ? "VPN отключён — zapret снова работает." : "VPN отключён, но zapret не запустился — подробности на карточке.");
+        }
+
+        // Раз в 2 секунды: VPN включили не из Старт-пака, а zapret работает — предупредить (один раз).
+        void WatchVpnConflict()
+        {
+            bool both = Core.RunningNames().Contains("winws") && AnyVpnConnected() && ZapretItem() != null;
+            if (!both) { conflictNotified = false; return; }
+            if (conflictNotified || testLog != null) return;
+            conflictNotified = true;
+            string v = string.Join(", ", cfg.Items.Where(x => VpnCtl.IsVpn(x) && VpnCtl.IsConnected(x, vpn)).Select(x => x.Name));
+            Journal.Write("zapret", "работает вместе с VPN (" + v + ")");
+            Action stop = async () =>
+            {
+                Item z = ZapretItem();
+                if (z == null) return;
+                await ZapretStop(z);
+                if (!Core.RunningNames().Contains("winws")) { zapretPausedForVpn = true; SetMsg(z, "на паузе, пока подключён VPN", false); }
+            };
+            if (Visible)
+            {
+                if (Ask("zapret и VPN включены вместе", "Подключён " + v + ", и работает zapret. Вместе они ломают Discord и YouTube: Discord может падать или бесконечно переподключаться.\n\nОстановить zapret, пока подключён VPN? Когда VPN отключится, zapret запустится снова.", "Остановить zapret", "Оставить как есть"))
+                    stop();
+            }
+            else Notify("zapret и VPN включены вместе", "Discord и YouTube могут не работать. Нажмите, чтобы остановить zapret на время VPN.", () => { ShowFromTray(); stop(); });
+        }
+
         async Task ZapretStop(Item it)
         {
             try

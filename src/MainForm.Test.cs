@@ -30,6 +30,9 @@ namespace StartPack
             foreach (Item it in cfg.Items) Log("  после починки: " + it.Name + " → " + it.Path + (Core.PathExists(it.Path) ? "" : "  [НЕ НАЙДЕН]") + (it.Special == "spotify" ? " | hostsfix " + it.HostsFixDir : ""));
             RefreshVpn();
             Log("VPN: Happ подключён " + vpn.Happ + ", INCY подключён " + vpn.Incy + ", Koala открыта " + vpn.KoalaRunning + ", сервер Happ " + (happServerName ?? "-"));
+            Log("zapret и VPN: zapret работает = " + Core.RunningNames().Contains("winws") + ", VPN подключён = " + AnyVpnConnected() +
+                " (" + string.Join(", ", cfg.Items.Where(x => VpnCtl.IsVpn(x) && VpnCtl.IsConnected(x, vpn)).Select(x => x.Name)) + "), не держать вместе = " + cfg.ZapretPauseForVpn +
+                ", «Запустить всё» пропустит zapret = " + (cfg.ZapretPauseForVpn && cfg.Items.Any(v => v.Enabled && VpnCtl.IsVpn(v) && v.HappAutoConnect && Core.PathExists(v.Path))));
             HappPreset cap = HappCtl.Capture();
             if (cap != null)
             {

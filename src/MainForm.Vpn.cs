@@ -94,6 +94,8 @@ namespace StartPack
                     SetMsg(it, null, false);
                     Journal.Write("incy", "подключён");
                     RefreshState();
+                    conflictNotified = true;
+                    await PauseZapretForVpn(it);
                     return 0;
                 }
             }
@@ -156,6 +158,7 @@ namespace StartPack
             SetMsg(it, ok ? null : "не подключился" + (err != null ? ": " + err : " — откройте " + title + " и проверьте сервер"), !ok);
             Journal.Write(it.Special, ok ? "подключён" + ServerNote(it) : "не подключился" + (err != null ? ": " + err : ""));
             RefreshState();
+            if (ok) { conflictNotified = true; await PauseZapretForVpn(it); }
             return ok;
         }
 
@@ -202,6 +205,7 @@ namespace StartPack
             SetMsg(it, off ? null : "не отключился" + (err != null ? ": " + err : ""), !off);
             Journal.Write(it.Special, off ? "отключён" : "не отключился" + (err != null ? ": " + err : ""));
             RefreshState();
+            if (off) await ResumeZapretAfterVpn();
         }
 
         string ServerNote(Item it)

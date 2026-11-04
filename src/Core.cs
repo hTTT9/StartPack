@@ -18,8 +18,8 @@ using System.Windows.Forms;
 
 [assembly: System.Reflection.AssemblyTitle("Старт-пак")]
 [assembly: System.Reflection.AssemblyProduct("Старт-пак")]
-[assembly: System.Reflection.AssemblyVersion("3.9.2.0")]
-[assembly: System.Reflection.AssemblyFileVersion("3.9.2.0")]
+[assembly: System.Reflection.AssemblyVersion("3.9.3.0")]
+[assembly: System.Reflection.AssemblyFileVersion("3.9.3.0")]
 
 namespace StartPack
 {
@@ -181,6 +181,7 @@ namespace StartPack
         public bool OverlayButtons { get; set; } // кнопки ▶/■ и ↻
         public int OverlayScale { get; set; }    // размер: 85, 100, 120 %
         public bool TipAutostartShown { get; set; }   // подсказка «Запуск с Windows» уже показана
+        public bool ZapretPauseForVpn { get; set; }   // пока подключён VPN, zapret выключен (вместе они ломают Discord и YouTube)
         public int AutorunDelay { get; set; }    // секунд ожидания перед «Запустить всё» при входе в Windows
         public bool UpdateNotify { get; set; }   // напоминать об обновлениях из трея
         public string ActiveProfile { get; set; }
@@ -199,6 +200,7 @@ namespace StartPack
             Version = 0; Theme = "dark"; CloseAfterLaunch = true; CheckUpdatesOnStart = true;
             Tray = true; Hotkey = true; NetCheck = true; ActiveProfile = ""; Profiles = new List<Profile>();
             OverlayOpacity = 85; OverlayX = -1; OverlayY = -1; UpdateNotify = false;
+            ZapretPauseForVpn = true;
             OverlayShow = "enabled"; OverlayStatus = true; OverlayNet = true; OverlayMs = true; OverlayButtons = true; OverlayScale = 100;
             Items = new List<Item>();
             Donate = DonateAddr.Defaults();
@@ -261,7 +263,7 @@ namespace StartPack
         public const string Title = "Старт-пак";
         public const string IpsetNone = "203.0.113.113/32";
         public const int ConfigVersion = 6;
-        public const string Version = "3.9.2";
+        public const string Version = "3.9.3";
 
         public static bool FirstRun;
 
