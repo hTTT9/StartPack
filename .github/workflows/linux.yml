@@ -1,0 +1,144 @@
+name: Linux
+
+# Старт-пак для Linux: сборка, самопроверка на настоящей Ubuntu (включая zapret с правами администратора),
+# установка пакетов в чистые Debian, Ubuntu, Fedora и Rocky Linux (родственник РЕД ОС),
+# выпуск по метке linux-v* (не «последний»: последним остаётся выпуск для Windows).
+on:
+  push:
+    branches: [linux]
+    tags: ['linux-v*']
+    paths-ignore: ['**.md']
+  pull_request:
+    paths: ['linux/**', '.github/workflows/linux.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Инструменты для пакетов
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Собрать AppImage, .deb и .rpm
+        run: bash linux/packaging/build.sh
+
+      - name: Самопроверка (логика, интернет, установка TG WS Proxy)
+        env:
+          STARTPACK_TEST_NET: '1'
+        run: linux/out/publish/startpack --selftest selftest-ubuntu.log
+
+      - name: Самопроверка zapret (установка, служба, nftables, смена стратегии)
+        env:
+          STARTPACK_TEST_ZAPRET: '1'
+          STARTPACK_ELEVATE: sudo
+        run: linux/out/publish/startpack --selftest selftest-zapret.log
+
+      - name: Снимки окна без экрана
+        run: |
+          sudo apt-get install -y fontconfig fonts-dejavu-core
+          linux/out/publish/startpack --screenshots shots
+
+      - name: AppImage запускается
+        run: |
+          chmod +x linux/out/StartPack-x86_64.AppImage
+          linux/out/StartPack-x86_64.AppImage --appimage-extract-and-run --version
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: startpack-linux
+          path: |
+            linux/out/StartPack-x86_64.AppImage
+            linux/out/*.deb
+            linux/out/*.rpm
+            linux/out/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checks
+          path: |
+            selftest-*.log
+            shots/
+
+  install:
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:12
+            kind: deb
+          - image: ubuntu:22.04
+            kind: deb
+          - image: ubuntu:24.04
+            kind: deb
+          - image: fedora:41
+            kind: rpm
+          - image: rockylinux:9
+            kind: rpm
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: startpack-linux
+          path: pkg
+
+      - name: Установить пакет (с зависимостями)
+        run: |
+          if [ "${{ matrix.kind }}" = deb ]; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./pkg/startpack_*_amd64.deb
+          else
+            dnf install -y ./pkg/startpack-*.x86_64.rpm
+          fi
+
+      - name: Программа на месте и запускается
+        run: |
+          test -x /opt/startpack/startpack
+          test -L /usr/bin/startpack
+          test -f /usr/share/applications/startpack.desktop
+          startpack --version
+
+      - name: Самопроверка
+        run: startpack --selftest selftest.log
+
+      - name: Удаление пакета
+        run: |
+          if [ "${{ matrix.kind }}" = deb ]; then apt-get remove -y startpack; else dnf remove -y startpack; fi
+          test ! -e /opt/startpack/startpack
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/linux-v')
+    needs: [build, install]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: startpack-linux
+          path: pkg
+
+      - name: Опубликовать (не «последний» — последним остаётся выпуск для Windows)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ github.ref_name }}'
+          ver="${tag#linux-v}"
+          inside=$(grep -oP '(?<=<Version>)[^<]+' linux/StartPack.Linux.csproj)
+          [ "$inside" = "$ver" ] || { echo "Метка $ver, а в программе $inside"; exit 1; }
+          awk -v v="## $ver" '$0==v{on=1;next} /^## /{if(on)exit} on' linux/CHANGELOG.md > notes.md
+          printf '\nКак установить: Ubuntu и Debian — startpack_%s_amd64.deb, Fedora и РЕД ОС — startpack-%s-1.x86_64.rpm, любой Linux — StartPack-x86_64.AppImage (сделайте файл исполняемым и запустите).\n' "$ver" "$ver" >> notes.md
+          gh release create "$tag" pkg/* --title "Старт-пак для Linux $ver (бета)" --notes-file notes.md --latest=false --prerelease

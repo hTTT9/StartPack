@@ -28,6 +28,16 @@
 
 Дальше Старт-пак обновляется сам: кнопка **«Обновить»** появится вверху окна, когда выйдет новая версия.
 
+## Linux (бета)
+
+Есть версия для Ubuntu, Debian, Fedora и РЕД ОС — в [выпусках с меткой linux-v](https://github.com/hTTT9/StartPack/releases):
+
+- Ubuntu и Debian — `startpack_<версия>_amd64.deb`, двойной щелчок или `sudo apt install ./startpack_<версия>_amd64.deb`;
+- Fedora и РЕД ОС — `startpack-<версия>-1.x86_64.rpm`, `sudo dnf install ./startpack-<версия>-1.x86_64.rpm`;
+- любой Linux — `StartPack-x86_64.AppImage`: сделайте файл исполняемым и запустите.
+
+zapret на Linux — [перенос стратегий Flowseal](https://github.com/Sergeydigl3/zapret-discord-youtube-linux), Старт-пак ставит его сам. Исходники — в папке [`linux/`](linux/).
+
 ## Что умеет
 
 - **«Запустить всё»** — по порядку и с паузами: сначала обход блокировок, потом прокси и VPN, потом мессенджеры.

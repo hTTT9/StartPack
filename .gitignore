@@ -9,3 +9,7 @@ StartPack.json.*
 logs/
 apps/
 notes.md
+# Linux-версия: сборка
+linux/bin/
+linux/obj/
+linux/out/

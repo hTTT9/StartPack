@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Старт-пак
+GenericName=Запуск программ одной кнопкой
+Comment=zapret, прокси, VPN, Telegram и Discord одной кнопкой
+Exec=startpack
+Icon=startpack
+Terminal=false
+Categories=Network;Utility;
+Keywords=zapret;vpn;discord;youtube;telegram;proxy;
+StartupWMClass=startpack
